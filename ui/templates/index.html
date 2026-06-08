@@ -4,6 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Model Transformer Portal</title>
+    <script>
+        const savedTheme = localStorage.getItem("portal-theme") || "light";
+        document.documentElement.dataset.theme = savedTheme;
+    </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
@@ -51,7 +55,13 @@
                     </div>
                 </div>
 
-                <div class="user-menu" id="userMenu"></div>
+                <div class="header-actions">
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
+                        <span class="theme-label" id="themeLabel">Light</span>
+                    </button>
+                    <div class="user-menu" id="userMenu"></div>
+                </div>
             </header>
 
             <div class="portal-layout">
@@ -105,9 +115,21 @@
         const reportList = document.getElementById("reportList");
         const assetCount = document.getElementById("assetCount");
         const detailPane = document.getElementById("detailPane");
+        const themeToggle = document.getElementById("themeToggle");
+        const themeIcon = document.getElementById("themeIcon");
+        const themeLabel = document.getElementById("themeLabel");
 
         let activeWorkspaceId = portalData.workspaces[0].id;
         let selectedAssetId = null;
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem("portal-theme", theme);
+            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
+            themeLabel.textContent = isDark ? "Dark" : "Light";
+            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+        }
 
         function findActiveWorkspace() {
             return portalData.workspaces.find((workspace) => workspace.id === activeWorkspaceId);
@@ -262,6 +284,13 @@
                 loginError.textContent = "";
             });
         });
+
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.dataset.theme || "light";
+            setTheme(currentTheme === "dark" ? "light" : "dark");
+        });
+
+        setTheme(document.documentElement.dataset.theme || "light");
     </script>
 </body>
 </html>
