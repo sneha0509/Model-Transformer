@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Model Transformer Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <main class="dashboard-shell">
+        <section class="login-screen" id="loginScreen" aria-label="Login">
+            <div class="login-panel">
+                <div class="brand-block">
+                    <span class="brand-mark">MT</span>
+                    <div>
+                        <p class="eyebrow">Model Transformer</p>
+                        <h1>Sign in</h1>
+                    </div>
+                </div>
+
+                <form class="login-form" id="loginForm">
+                    <label for="email">Email</label>
+                    <input id="email" name="email" type="email" value="{{ app_data.users[0].email }}" autocomplete="email" required>
+
+                    <label for="password">Password</label>
+                    <input id="password" name="password" type="password" value="{{ app_data.users[0].password }}" autocomplete="current-password" required>
+
+                    <p class="form-error" id="loginError" role="alert"></p>
+                    <button class="primary-button" type="submit">Log in</button>
+                </form>
+
+                <div class="mock-users" aria-label="Sample users">
+                    {% for user in app_data.users %}
+                    <button class="mock-user" type="button" data-email="{{ user.email }}" data-password="{{ user.password }}">
+                        <span>{{ user.initials }}</span>
+                        <strong>{{ user.name }}</strong>
+                        <small>{{ user.role }}</small>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+
+        <section class="app-shell" id="appShell" aria-label="Model Transformer workspace" hidden>
+            <header class="app-header">
+                <div class="brand-block compact">
+                    <span class="brand-mark">MT</span>
+                    <div>
+                        <p class="eyebrow">Model Transformer</p>
+                        <h1>Workspace Hub</h1>
+                    </div>
+                </div>
+
+                <div class="user-menu" id="userMenu"></div>
+            </header>
+
+            <div class="portal-layout">
+                <aside class="left-pane" aria-label="Workspace navigation">
+                    <section class="pane-section" aria-labelledby="workspaceTitle">
+                        <div class="section-heading">
+                            <p class="eyebrow">Section 1</p>
+                            <h2 id="workspaceTitle">Workspaces</h2>
+                        </div>
+                        <div class="workspace-list" id="workspaceList"></div>
+                    </section>
+
+                    <section class="pane-section" aria-labelledby="assetsTitle">
+                        <div class="section-heading inline-heading">
+                            <div>
+                                <p class="eyebrow">Section 2</p>
+                                <h2 id="assetsTitle">Models and Reports</h2>
+                            </div>
+                            <span class="asset-count" id="assetCount"></span>
+                        </div>
+
+                        <div class="asset-group">
+                            <h3>Models</h3>
+                            <div class="asset-list" id="modelList"></div>
+                        </div>
+
+                        <div class="asset-group">
+                            <h3>Reports</h3>
+                            <div class="asset-list" id="reportList"></div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="right-pane" id="detailPane" aria-live="polite" aria-label="Selected item details"></section>
+            </div>
+        </section>
+    </main>
+
+    <script id="portalData" type="application/json">{{ app_data | tojson }}</script>
+    <script>
+        const portalData = JSON.parse(document.getElementById("portalData").textContent);
+        const loginScreen = document.getElementById("loginScreen");
+        const appShell = document.getElementById("appShell");
+        const loginForm = document.getElementById("loginForm");
+        const loginError = document.getElementById("loginError");
+        const emailInput = document.getElementById("email");
+        const passwordInput = document.getElementById("password");
+        const userMenu = document.getElementById("userMenu");
+        const workspaceList = document.getElementById("workspaceList");
+        const modelList = document.getElementById("modelList");
+        const reportList = document.getElementById("reportList");
+        const assetCount = document.getElementById("assetCount");
+        const detailPane = document.getElementById("detailPane");
+
+        let activeWorkspaceId = portalData.workspaces[0].id;
+        let selectedAssetId = null;
+
+        function findActiveWorkspace() {
+            return portalData.workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+        }
+
+        function renderWorkspaces() {
+            workspaceList.replaceChildren();
+
+            portalData.workspaces.forEach((workspace) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "workspace-item";
+                button.dataset.active = String(workspace.id === activeWorkspaceId);
+                button.innerHTML = `
+                    <span>
+                        <strong>${workspace.name}</strong>
+                        <small>${workspace.description}</small>
+                    </span>
+                    <em>${workspace.status}</em>
+                `;
+                button.addEventListener("click", () => {
+                    activeWorkspaceId = workspace.id;
+                    selectedAssetId = null;
+                    detailPane.replaceChildren();
+                    renderWorkspaces();
+                    renderAssets();
+                });
+                workspaceList.append(button);
+            });
+        }
+
+        function renderAssets() {
+            const workspace = findActiveWorkspace();
+            modelList.replaceChildren();
+            reportList.replaceChildren();
+            assetCount.textContent = `${workspace.models.length + workspace.reports.length} items`;
+
+            workspace.models.forEach((model) => {
+                modelList.append(renderAssetButton(model, "model"));
+            });
+
+            workspace.reports.forEach((report) => {
+                reportList.append(renderAssetButton(report, "report"));
+            });
+        }
+
+        function renderAssetButton(asset, type) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "asset-item";
+            button.dataset.active = String(asset.id === selectedAssetId);
+            button.innerHTML = `
+                <span class="asset-type">${type}</span>
+                <strong>${asset.name}</strong>
+                <small>${asset.owner} - ${asset.updated}</small>
+            `;
+            button.addEventListener("click", () => {
+                selectedAssetId = asset.id;
+                renderAssets();
+                renderDetail(asset, type);
+            });
+            return button;
+        }
+
+        function renderDetail(asset, type) {
+            const metricCards = asset.metrics.map((metric) => `
+                <div class="detail-metric">
+                    <span>${metric.label}</span>
+                    <strong>${metric.value}</strong>
+                </div>
+            `).join("");
+
+            const rows = asset.sample_rows.map((row) => `
+                <tr>
+                    <td>${row.field}</td>
+                    <td>${row.value}</td>
+                    <td>${row.trend}</td>
+                </tr>
+            `).join("");
+
+            detailPane.innerHTML = `
+                <article class="detail-card">
+                    <div class="detail-header">
+                        <div>
+                            <p class="eyebrow">${type}</p>
+                            <h2>${asset.name}</h2>
+                        </div>
+                        <span class="status-pill">${asset.status}</span>
+                    </div>
+
+                    <p class="detail-summary">${asset.summary}</p>
+
+                    <div class="detail-meta">
+                        <span><strong>Owner</strong>${asset.owner}</span>
+                        <span><strong>Updated</strong>${asset.updated}</span>
+                    </div>
+
+                    <div class="detail-metrics">${metricCards}</div>
+
+                    <div class="sample-table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Sample data</th>
+                                    <th>Value</th>
+                                    <th>Trend</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </article>
+            `;
+        }
+
+        function completeLogin(user) {
+            loginScreen.hidden = true;
+            appShell.hidden = false;
+            userMenu.innerHTML = `
+                <span>${user.initials}</span>
+                <div>
+                    <strong>${user.name}</strong>
+                    <small>${user.role}</small>
+                </div>
+            `;
+            renderWorkspaces();
+            renderAssets();
+            detailPane.replaceChildren();
+        }
+
+        loginForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const email = emailInput.value.trim().toLowerCase();
+            const password = passwordInput.value;
+            const user = portalData.users.find((sampleUser) => (
+                sampleUser.email.toLowerCase() === email && sampleUser.password === password
+            ));
+
+            if (!user) {
+                loginError.textContent = "Use one of the sample users.";
+                return;
+            }
+
+            loginError.textContent = "";
+            completeLogin(user);
+        });
+
+        document.querySelectorAll(".mock-user").forEach((button) => {
+            button.addEventListener("click", () => {
+                emailInput.value = button.dataset.email;
+                passwordInput.value = button.dataset.password;
+                loginError.textContent = "";
+            });
+        });
+    </script>
+</body>
+</html>
