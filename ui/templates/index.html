@@ -23,29 +23,16 @@
                 </div>
 
                 <form class="login-form" id="loginForm">
-                    <label for="email">Email</label>
-                    <input id="email" name="email" type="email" value="{{ app_data.users[0].email }}" autocomplete="email" required>
-
-                    <label for="password">Password</label>
-                    <input id="password" name="password" type="password" value="{{ app_data.users[0].password }}" autocomplete="current-password" required>
-
+                    <p class="login-hint">Uses the Azure CLI account signed in on this machine.</p>
                     <p class="form-error" id="loginError" role="alert"></p>
-                    <button class="primary-button" type="submit">Log in</button>
-                </form>
-
-                <div class="mock-users" aria-label="Sample users">
-                    {% for user in app_data.users %}
-                    <button class="mock-user" type="button" data-email="{{ user.email }}" data-password="{{ user.password }}">
-                        <span>{{ user.initials }}</span>
-                        <strong>{{ user.name }}</strong>
-                        <small>{{ user.role }}</small>
+                    <button class="primary-button" id="loginButton" type="submit">
+                        <span id="loginButtonText">Continue with Azure CLI</span>
                     </button>
-                    {% endfor %}
-                </div>
+                </form>
             </div>
         </section>
 
-        <section class="app-shell" id="appShell" aria-label="Model Transformer workspace" hidden>
+        <section class="app-shell" id="appShell" aria-label="Model Transformer workspaces" hidden>
             <header class="app-header">
                 <div class="brand-block compact">
                     <span class="brand-mark">MT</span>
@@ -64,63 +51,114 @@
                 </div>
             </header>
 
-            <div class="portal-layout">
-                <aside class="left-pane" aria-label="Workspace navigation">
-                    <section class="pane-section" aria-labelledby="workspaceTitle">
-                        <div class="section-heading">
-                            <p class="eyebrow">Section 1</p>
+            <div class="portal-layout three-column-layout">
+                <section class="workspace-panel" aria-labelledby="workspaceTitle">
+                    <div class="section-heading inline-heading">
+                        <div>
+                            <p class="eyebrow">Accessible to you</p>
                             <h2 id="workspaceTitle">Workspaces</h2>
                         </div>
-                        <div class="workspace-list" id="workspaceList"></div>
-                    </section>
+                        <span class="workspace-count" id="workspaceCount"></span>
+                    </div>
 
-                    <section class="pane-section" aria-labelledby="assetsTitle">
-                        <div class="section-heading inline-heading">
+                    <label class="search-field" for="workspaceSearch">
+                        <span>Search workspaces</span>
+                        <input id="workspaceSearch" type="search" placeholder="Search workspace name">
+                    </label>
+
+                    <p class="empty-state" id="workspaceEmptyState" hidden>No workspaces were returned for this Azure CLI account.</p>
+                    <div class="workspace-list single-column" id="workspaceList"></div>
+                </section>
+
+                <section class="assets-panel" aria-labelledby="assetsTitle">
+                    <div class="section-heading inline-heading">
+                        <div>
+                            <p class="eyebrow" id="selectedWorkspaceLabel">Selected workspace</p>
+                            <h2 id="assetsTitle">Models and reports</h2>
+                        </div>
+                        <span class="asset-count" id="assetCount"></span>
+                    </div>
+
+                    <label class="search-field" for="assetSearch">
+                        <span>Search models and reports</span>
+                        <input id="assetSearch" type="search" placeholder="Search by name, type, or owner" disabled>
+                    </label>
+
+                    <div class="asset-kind-switch" id="assetKindSwitch" aria-label="Filter models and reports">
+                        <button type="button" data-kind="all" data-active="true">All</button>
+                        <button type="button" data-kind="Model">Models</button>
+                        <button type="button" data-kind="Report">Reports</button>
+                    </div>
+
+                    <p class="form-error asset-error" id="assetError" role="alert"></p>
+                    <p class="empty-state" id="assetEmptyState">No workspace selected.</p>
+                    <p class="loading-state" id="assetLoading" hidden>Loading assets...</p>
+                    <div class="asset-list combined-asset-list" id="assetList" hidden></div>
+                </section>
+
+                <aside class="detail-panel" aria-labelledby="detailTitle">
+                    <div class="section-heading">
+                        <p class="eyebrow">Data panel</p>
+                        <h2 id="detailTitle">Details</h2>
+                    </div>
+
+                    <p class="empty-state" id="detailEmptyState">Select a model or report.</p>
+                    <article class="detail-card compact-detail" id="detailContent" hidden>
+                        <div class="detail-header">
                             <div>
-                                <p class="eyebrow">Section 2</p>
-                                <h2 id="assetsTitle">Models and Reports</h2>
+                                <p class="eyebrow" id="detailBadge"></p>
+                                <h2 id="detailName"></h2>
                             </div>
-                            <span class="asset-count" id="assetCount"></span>
+                            <span class="status-pill" id="detailStatus"></span>
                         </div>
 
-                        <div class="asset-group">
-                            <h3>Models</h3>
-                            <div class="asset-list" id="modelList"></div>
-                        </div>
-
-                        <div class="asset-group">
-                            <h3>Reports</h3>
-                            <div class="asset-list" id="reportList"></div>
-                        </div>
-                    </section>
+                        <div class="detail-meta detail-table" id="detailTable"></div>
+                        <a class="detail-link" id="detailLink" href="#" target="_blank" rel="noreferrer" hidden>Open in Power BI</a>
+                    </article>
                 </aside>
-
-                <section class="right-pane" id="detailPane" aria-live="polite" aria-label="Selected item details"></section>
             </div>
         </section>
     </main>
 
-    <script id="portalData" type="application/json">{{ app_data | tojson }}</script>
     <script>
-        const portalData = JSON.parse(document.getElementById("portalData").textContent);
         const loginScreen = document.getElementById("loginScreen");
         const appShell = document.getElementById("appShell");
         const loginForm = document.getElementById("loginForm");
+        const loginButton = document.getElementById("loginButton");
+        const loginButtonText = document.getElementById("loginButtonText");
         const loginError = document.getElementById("loginError");
-        const emailInput = document.getElementById("email");
-        const passwordInput = document.getElementById("password");
         const userMenu = document.getElementById("userMenu");
+        const workspaceSearch = document.getElementById("workspaceSearch");
         const workspaceList = document.getElementById("workspaceList");
-        const modelList = document.getElementById("modelList");
-        const reportList = document.getElementById("reportList");
+        const workspaceCount = document.getElementById("workspaceCount");
+        const workspaceEmptyState = document.getElementById("workspaceEmptyState");
+        const selectedWorkspaceLabel = document.getElementById("selectedWorkspaceLabel");
+        const assetSearch = document.getElementById("assetSearch");
+        const assetKindSwitch = document.getElementById("assetKindSwitch");
         const assetCount = document.getElementById("assetCount");
-        const detailPane = document.getElementById("detailPane");
+        const assetError = document.getElementById("assetError");
+        const assetEmptyState = document.getElementById("assetEmptyState");
+        const assetLoading = document.getElementById("assetLoading");
+        const assetList = document.getElementById("assetList");
+        const detailEmptyState = document.getElementById("detailEmptyState");
+        const detailContent = document.getElementById("detailContent");
+        const detailBadge = document.getElementById("detailBadge");
+        const detailName = document.getElementById("detailName");
+        const detailStatus = document.getElementById("detailStatus");
+        const detailTable = document.getElementById("detailTable");
+        const detailLink = document.getElementById("detailLink");
         const themeToggle = document.getElementById("themeToggle");
         const themeIcon = document.getElementById("themeIcon");
         const themeLabel = document.getElementById("themeLabel");
 
-        let activeWorkspaceId = portalData.workspaces[0].id;
-        let selectedAssetId = null;
+        const appState = {
+            workspaces: [],
+            activeWorkspaceId: null,
+            activeAssetKey: null,
+            activeAssetKind: "all",
+            assetCache: new Map(),
+            detailCache: new Map(),
+        };
 
         function setTheme(theme) {
             const isDark = theme === "dark";
@@ -131,158 +169,415 @@
             themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
         }
 
+        function setLoginLoading(isLoading) {
+            loginButton.disabled = isLoading;
+            loginButtonText.textContent = isLoading ? "Loading workspaces..." : "Continue with Azure CLI";
+        }
+
+        function setAssetLoading(isLoading) {
+            assetLoading.hidden = !isLoading;
+            if (isLoading) {
+                assetList.hidden = true;
+                assetEmptyState.hidden = true;
+                assetError.textContent = "";
+            }
+        }
+
+        function normalizeSearchValue(value) {
+            return String(value || "").toLowerCase();
+        }
+
+        function matchesSearch(item, query, fields) {
+            const normalizedQuery = normalizeSearchValue(query).trim();
+            if (!normalizedQuery) {
+                return true;
+            }
+
+            return fields.some((field) => normalizeSearchValue(item[field]).includes(normalizedQuery));
+        }
+
+        function assetKey(asset) {
+            return `${asset.category || asset.type}:${asset.id || asset.name}`;
+        }
+
+        function detailCacheKey(asset) {
+            return `${appState.activeWorkspaceId}:${assetKey(asset)}`;
+        }
+
         function findActiveWorkspace() {
-            return portalData.workspaces.find((workspace) => workspace.id === activeWorkspaceId);
+            return appState.workspaces.find((workspace) => workspace.id === appState.activeWorkspaceId);
+        }
+
+        function getActiveAssets() {
+            return appState.assetCache.get(appState.activeWorkspaceId) || {models: [], reports: []};
+        }
+
+        function getCombinedAssets(assets) {
+            return [
+                ...(assets.models || []).map((asset) => ({...asset, category: asset.category || "Model"})),
+                ...(assets.reports || []).map((asset) => ({...asset, category: asset.category || "Report"})),
+            ];
+        }
+
+        function renderAssetKindSwitch() {
+            assetKindSwitch.querySelectorAll("button").forEach((button) => {
+                button.dataset.active = String(button.dataset.kind === appState.activeAssetKind);
+            });
+        }
+
+        function renderUser(user) {
+            userMenu.replaceChildren();
+
+            const initials = document.createElement("span");
+            initials.textContent = user.initials || "AZ";
+
+            const text = document.createElement("div");
+            const name = document.createElement("strong");
+            const detail = document.createElement("small");
+
+            name.textContent = user.name || "Azure CLI user";
+            detail.textContent = user.email || user.tenantId || "Signed in with Azure CLI";
+            text.append(name, detail);
+            userMenu.append(initials, text);
         }
 
         function renderWorkspaces() {
             workspaceList.replaceChildren();
 
-            portalData.workspaces.forEach((workspace) => {
-                const button = document.createElement("button");
-                button.type = "button";
-                button.className = "workspace-item";
-                button.dataset.active = String(workspace.id === activeWorkspaceId);
-                button.innerHTML = `
-                    <span>
-                        <strong>${workspace.name}</strong>
-                        <small>${workspace.description}</small>
-                    </span>
-                    <em>${workspace.status}</em>
-                `;
-                button.addEventListener("click", () => {
-                    activeWorkspaceId = workspace.id;
-                    selectedAssetId = null;
-                    detailPane.replaceChildren();
-                    renderWorkspaces();
-                    renderAssets();
-                });
-                workspaceList.append(button);
+            const query = workspaceSearch.value;
+            const filteredWorkspaces = appState.workspaces.filter((workspace) => (
+                matchesSearch(workspace, query, ["name", "type", "access", "capacity"])
+            ));
+            const countText = query.trim()
+                ? `${filteredWorkspaces.length} / ${appState.workspaces.length}`
+                : `${appState.workspaces.length} ${appState.workspaces.length === 1 ? "workspace" : "workspaces"}`;
+
+            workspaceCount.textContent = countText;
+            workspaceEmptyState.hidden = filteredWorkspaces.length > 0;
+            workspaceEmptyState.textContent = appState.workspaces.length
+                ? "No workspaces match your search."
+                : "No workspaces were returned for this Azure CLI account.";
+
+            filteredWorkspaces.forEach((workspace) => {
+                const item = document.createElement("button");
+                item.type = "button";
+                item.className = "workspace-item";
+                item.dataset.active = String(workspace.id === appState.activeWorkspaceId);
+
+                const body = document.createElement("span");
+                const name = document.createElement("strong");
+                const description = document.createElement("small");
+                const meta = document.createElement("small");
+                const access = document.createElement("em");
+
+                name.textContent = workspace.name;
+                description.textContent = workspace.type || "Workspace";
+                meta.className = "workspace-meta";
+                meta.textContent = workspace.capacity || "Capacity unknown";
+                body.append(name, description, meta);
+
+                access.textContent = workspace.access || "Accessible";
+                item.append(body, access);
+                item.addEventListener("click", () => loadWorkspaceAssets(workspace));
+                workspaceList.append(item);
             });
         }
 
-        function renderAssets() {
-            const workspace = findActiveWorkspace();
-            modelList.replaceChildren();
-            reportList.replaceChildren();
-            assetCount.textContent = `${workspace.models.length + workspace.reports.length} items`;
+        function renderAssetItem(asset) {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "asset-item";
+            item.dataset.active = String(assetKey(asset) === appState.activeAssetKey);
 
-            workspace.models.forEach((model) => {
-                modelList.append(renderAssetButton(model, "model"));
-            });
+            const type = document.createElement("span");
+            const name = document.createElement("strong");
+            const owner = document.createElement("small");
+            const status = document.createElement("small");
 
-            workspace.reports.forEach((report) => {
-                reportList.append(renderAssetButton(report, "report"));
-            });
+            type.className = "asset-type";
+            type.textContent = asset.category || asset.type || "Asset";
+            name.textContent = asset.name || "Unnamed asset";
+            owner.textContent = asset.category === "Report" ? `Dataset ${asset.datasetId || "unavailable"}` : asset.owner || "Details unavailable";
+            status.textContent = asset.type && asset.type !== asset.category ? asset.type : asset.status || "Available";
+            item.append(type, name, owner, status);
+            item.addEventListener("click", () => selectAsset(asset));
+
+            return item;
         }
 
-        function renderAssetButton(asset, type) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "asset-item";
-            button.dataset.active = String(asset.id === selectedAssetId);
-            button.innerHTML = `
-                <span class="asset-type">${type}</span>
-                <strong>${asset.name}</strong>
-                <small>${asset.owner} - ${asset.updated}</small>
-            `;
-            button.addEventListener("click", () => {
-                selectedAssetId = asset.id;
-                renderAssets();
-                renderDetail(asset, type);
-            });
-            return button;
-        }
-
-        function renderDetail(asset, type) {
-            const metricCards = asset.metrics.map((metric) => `
-                <div class="detail-metric">
-                    <span>${metric.label}</span>
-                    <strong>${metric.value}</strong>
-                </div>
-            `).join("");
-
-            const rows = asset.sample_rows.map((row) => `
-                <tr>
-                    <td>${row.field}</td>
-                    <td>${row.value}</td>
-                    <td>${row.trend}</td>
-                </tr>
-            `).join("");
-
-            detailPane.innerHTML = `
-                <article class="detail-card">
-                    <div class="detail-header">
-                        <div>
-                            <p class="eyebrow">${type}</p>
-                            <h2>${asset.name}</h2>
-                        </div>
-                        <span class="status-pill">${asset.status}</span>
-                    </div>
-
-                    <p class="detail-summary">${asset.summary}</p>
-
-                    <div class="detail-meta">
-                        <span><strong>Owner</strong>${asset.owner}</span>
-                        <span><strong>Updated</strong>${asset.updated}</span>
-                    </div>
-
-                    <div class="detail-metrics">${metricCards}</div>
-
-                    <div class="sample-table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Sample data</th>
-                                    <th>Value</th>
-                                    <th>Trend</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rows}</tbody>
-                        </table>
-                    </div>
-                </article>
-            `;
-        }
-
-        function completeLogin(user) {
-            loginScreen.hidden = true;
-            appShell.hidden = false;
-            userMenu.innerHTML = `
-                <span>${user.initials}</span>
-                <div>
-                    <strong>${user.name}</strong>
-                    <small>${user.role}</small>
-                </div>
-            `;
-            renderWorkspaces();
-            renderAssets();
-            detailPane.replaceChildren();
-        }
-
-        loginForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-            const email = emailInput.value.trim().toLowerCase();
-            const password = passwordInput.value;
-            const user = portalData.users.find((sampleUser) => (
-                sampleUser.email.toLowerCase() === email && sampleUser.password === password
+        function renderAssets(assets) {
+            const combinedAssets = getCombinedAssets(assets);
+            const kindFilteredAssets = appState.activeAssetKind === "all"
+                ? combinedAssets
+                : combinedAssets.filter((asset) => asset.category === appState.activeAssetKind);
+            const query = assetSearch.value;
+            const filteredAssets = kindFilteredAssets.filter((asset) => (
+                matchesSearch(asset, query, ["name", "category", "type", "owner", "status", "datasetId"])
             ));
 
-            if (!user) {
-                loginError.textContent = "Use one of the sample users.";
+            assetList.replaceChildren();
+            assetSearch.disabled = !appState.activeWorkspaceId;
+            renderAssetKindSwitch();
+            assetCount.textContent = query.trim()
+                ? `${filteredAssets.length} / ${kindFilteredAssets.length}`
+                : `${kindFilteredAssets.length} ${kindFilteredAssets.length === 1 ? "item" : "items"}`;
+            assetEmptyState.hidden = filteredAssets.length > 0;
+            assetEmptyState.textContent = kindFilteredAssets.length
+                ? "No models or reports match your search."
+                : appState.activeAssetKind === "all"
+                    ? "No models or reports were returned for this workspace."
+                    : `No ${appState.activeAssetKind.toLowerCase()}s were returned for this workspace.`;
+            assetList.hidden = filteredAssets.length === 0;
+
+            filteredAssets.forEach((asset) => assetList.append(renderAssetItem(asset)));
+        }
+
+        function setAssetKind(kind) {
+            appState.activeAssetKind = kind;
+            appState.activeAssetKey = null;
+            clearDetail("Select a model or report.");
+            renderAssets(getActiveAssets());
+        }
+
+        function clearDetail(message = "Select a model or report.") {
+            detailEmptyState.textContent = message;
+            detailEmptyState.hidden = false;
+            detailContent.hidden = true;
+            detailTable.replaceChildren();
+            detailLink.hidden = true;
+        }
+
+        function formatDetailValue(value) {
+            if (value === true) {
+                return "Yes";
+            }
+            if (value === false) {
+                return "No";
+            }
+            return value || "Unavailable";
+        }
+
+        function formatListValue(values) {
+            return Array.isArray(values) && values.length ? values.join(", ") : "Unavailable";
+        }
+
+        function formatSchedule(schedule) {
+            if (!schedule || !schedule.enabled) {
+                return "No";
+            }
+
+            const times = formatListValue(schedule.times);
+            const days = formatListValue(schedule.days);
+            const timeZone = schedule.timeZone || "Unavailable";
+            return `Yes - ${days} at ${times} (${timeZone})`;
+        }
+
+        function formatTableSummary(tables) {
+            if (!Array.isArray(tables) || !tables.length) {
+                return "Unavailable";
+            }
+
+            return tables
+                .map((table) => `${table.name} (${table.partitionCount || 0} partitions)`)
+                .join("; ");
+        }
+
+        function addDetailRow(label, value) {
+            const row = document.createElement("span");
+            const rowLabel = document.createElement("strong");
+            const rowValue = document.createElement("small");
+
+            rowLabel.textContent = label;
+            rowValue.textContent = formatDetailValue(value);
+            row.append(rowLabel, rowValue);
+            detailTable.append(row);
+        }
+
+        function getAssetOpenUrl(asset) {
+            if (asset.category === "Model") {
+                return asset.semanticModelUrl || asset.webUrl || "";
+            }
+
+            return asset.webUrl || "";
+        }
+
+        function renderDetail(asset) {
+            const lastRefresh = asset.lastRefresh || {};
+            const refreshSchedule = asset.refreshSchedule || {};
+            const rows = [
+                ["ID", asset.id],
+                ["Item type", asset.itemKind || asset.category],
+                ["Connection mode", asset.connectionMode],
+                ["Status", asset.status],
+                ["Owner", asset.owner || asset.configuredBy],
+                ["Last refresh status", lastRefresh.status],
+                ["Last refresh time", lastRefresh.time],
+                ["Last refresh type", lastRefresh.type],
+                ["Scheduled refresh", formatSchedule(refreshSchedule)],
+                ["Table count", asset.tableCount],
+                ["Has partitions", asset.hasPartitions],
+                ["Partition count", asset.partitionCount],
+                ["Tables", formatTableSummary(asset.tables)],
+            ];
+
+            if (asset.category !== "Model") {
+                rows.push(
+                    ["Dataset ID", asset.datasetId],
+                    ["Semantic model mode", asset.semanticModelConnectionMode],
+                    ["Embed URL", asset.embedUrl],
+                    ["Web URL", asset.webUrl]
+                );
+            }
+
+            detailBadge.textContent = asset.category || "Asset";
+            detailName.textContent = asset.name || "Unnamed asset";
+            detailStatus.textContent = asset.status || "Available";
+            detailTable.replaceChildren();
+            rows.forEach(([label, value]) => addDetailRow(label, value));
+
+            const openUrl = getAssetOpenUrl(asset);
+            if (openUrl) {
+                detailLink.href = openUrl;
+                detailLink.textContent = asset.category === "Model" ? "Open semantic model" : "Open report";
+                detailLink.hidden = false;
+            } else {
+                detailLink.hidden = true;
+            }
+
+            detailEmptyState.hidden = true;
+            detailContent.hidden = false;
+        }
+
+        async function loadAssetDetails(asset) {
+            const cacheKey = detailCacheKey(asset);
+            if (appState.detailCache.has(cacheKey)) {
+                renderDetail(appState.detailCache.get(cacheKey));
                 return;
             }
 
+            clearDetail("Loading metadata...");
+
+            try {
+                const response = await fetch(
+                    `/api/workspaces/${encodeURIComponent(appState.activeWorkspaceId)}/assets/${encodeURIComponent(asset.category)}/${encodeURIComponent(asset.id)}/details`,
+                    {headers: {"Accept": "application/json"}},
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not load item metadata.");
+                }
+
+                appState.detailCache.set(cacheKey, data);
+                renderDetail(data);
+            } catch (error) {
+                clearDetail(error.message);
+            }
+        }
+
+        function selectAsset(asset) {
+            appState.activeAssetKey = assetKey(asset);
+            renderAssets(getActiveAssets());
+            loadAssetDetails(asset);
+        }
+
+        async function loadWorkspaceAssets(workspace) {
+            appState.activeWorkspaceId = workspace.id;
+            appState.activeAssetKey = null;
+            appState.activeAssetKind = "all";
+            appState.detailCache.clear();
+            assetSearch.value = "";
+            renderWorkspaces();
+            selectedWorkspaceLabel.textContent = workspace.name;
+            assetCount.textContent = "";
+            assetError.textContent = "";
+            clearDetail("Select a model or report.");
+
+            if (appState.assetCache.has(workspace.id)) {
+                renderAssets(appState.assetCache.get(workspace.id));
+                return;
+            }
+
+            setAssetLoading(true);
+
+            try {
+                const response = await fetch(`/api/workspaces/${encodeURIComponent(workspace.id)}/assets`, {
+                    headers: {"Accept": "application/json"},
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not load workspace assets.");
+                }
+
+                appState.assetCache.set(workspace.id, data);
+                renderAssets(data);
+            } catch (error) {
+                assetList.hidden = true;
+                assetEmptyState.hidden = true;
+                assetError.textContent = error.message;
+                clearDetail("No asset details available.");
+            } finally {
+                setAssetLoading(false);
+            }
+        }
+
+        function completeLogin(data) {
+            loginScreen.hidden = true;
+            appShell.hidden = false;
+            appState.workspaces = data.workspaces || [];
+            appState.activeWorkspaceId = null;
+            appState.activeAssetKey = null;
+            appState.activeAssetKind = "all";
+            appState.assetCache.clear();
+            appState.detailCache.clear();
+            workspaceSearch.value = "";
+            assetSearch.value = "";
+            assetSearch.disabled = true;
+            renderUser(data.user || {});
+            renderWorkspaces();
+            selectedWorkspaceLabel.textContent = "Selected workspace";
+            assetCount.textContent = "";
+            assetEmptyState.hidden = false;
+            assetEmptyState.textContent = appState.workspaces.length ? "No workspace selected." : "No assets to show.";
+            assetList.hidden = true;
+            renderAssetKindSwitch();
+            clearDetail("Select a model or report.");
+        }
+
+        loginForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
             loginError.textContent = "";
-            completeLogin(user);
+            setLoginLoading(true);
+
+            try {
+                const response = await fetch("/api/login", {
+                    method: "POST",
+                    headers: {"Accept": "application/json"},
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Azure CLI sign-in failed.");
+                }
+
+                completeLogin(data);
+            } catch (error) {
+                loginError.textContent = error.message;
+            } finally {
+                setLoginLoading(false);
+            }
         });
 
-        document.querySelectorAll(".mock-user").forEach((button) => {
-            button.addEventListener("click", () => {
-                emailInput.value = button.dataset.email;
-                passwordInput.value = button.dataset.password;
-                loginError.textContent = "";
-            });
+        workspaceSearch.addEventListener("input", renderWorkspaces);
+        assetSearch.addEventListener("input", () => renderAssets(getActiveAssets()));
+        assetKindSwitch.addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-kind]");
+            if (!button) {
+                return;
+            }
+
+            setAssetKind(button.dataset.kind);
         });
 
         themeToggle.addEventListener("click", () => {
