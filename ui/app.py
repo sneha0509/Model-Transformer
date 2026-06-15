@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from dotenv import load_dotenv
 
 import requests
 from azure.core.exceptions import ClientAuthenticationError
@@ -12,7 +13,7 @@ from azure.identity import AzureCliCredential, CredentialUnavailableError
 from flask import Flask, jsonify, render_template, request
 
 
-app = Flask(__name__, static_folder="templates/static")
+model_transformer = Flask(__name__, static_folder="templates/static")
 POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 POWER_BI_GROUPS_URL = "https://api.powerbi.com/v1.0/myorg/groups"
@@ -387,7 +388,6 @@ def normalize_model(dataset, workspace_id):
         "name": dataset.get("name") or "Unnamed model",
         "type": "Model",
         "owner": owner,
-        "status": "Refreshable" if refreshable else "Static",
         "configuredBy": owner,
         "createdDate": dataset.get("createdDate", ""),
         "targetStorageMode": dataset.get("targetStorageMode", ""),
@@ -436,7 +436,7 @@ def build_user(account):
     }
 
 
-@app.route("/")
+@model_transformer.route("/")
 def index():
     return render_template("index.html")
 
@@ -469,7 +469,7 @@ def normalize_selected_tables_payload(payload):
     }
 
 
-@app.post("/selected-tables")
+@model_transformer.post("/selected-tables")
 def selected_tables():
     payload = request.get_json(silent=True) if request.is_json else None
     if payload is None:
@@ -482,7 +482,7 @@ def selected_tables():
     return render_template("selected_tables.html", selection=selection)
 
 
-@app.post("/api/login")
+@model_transformer.post("/api/login")
 def login_with_azure_cli():
     try:
         account = get_azure_cli_account()
@@ -502,7 +502,7 @@ def login_with_azure_cli():
     return jsonify({"user": build_user(account), "workspaces": workspaces})
 
 
-@app.get("/api/workspaces/<workspace_id>/assets")
+@model_transformer.get("/api/workspaces/<workspace_id>/assets")
 def workspace_assets(workspace_id):
     try:
         token = get_power_bi_access_token()
@@ -521,7 +521,7 @@ def workspace_assets(workspace_id):
     return jsonify(assets)
 
 
-@app.get("/api/workspaces/<workspace_id>/assets/<category>/<asset_id>/details")
+@model_transformer.get("/api/workspaces/<workspace_id>/assets/<category>/<asset_id>/details")
 def asset_details(workspace_id, category, asset_id):
     try:
         token = get_power_bi_access_token()
@@ -542,7 +542,8 @@ def asset_details(workspace_id, category, asset_id):
 
 
 def main():
-    app.run(debug=True)
+    load_dotenv(dotenv_path=".env", override=False)
+    model_transformer.run(debug=int(os.getenv("DEBUG")))
 
 
 if __name__ == "__main__":

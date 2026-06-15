@@ -433,7 +433,7 @@
 
             section.className = "table-values-panel";
             header.className = "table-values-header";
-            heading.textContent = "Table values";
+            heading.textContent = "Tables";
             allLabel.className = "table-value-option";
             allCheckbox.type = "checkbox";
             allText.textContent = "Select All";
@@ -445,7 +445,7 @@
             if (!Array.isArray(tables) || !tables.length) {
                 const empty = document.createElement("p");
                 empty.className = "mini-empty-state";
-                empty.textContent = "No table values available.";
+                empty.textContent = "No tables available.";
                 section.append(empty);
                 detailTables.append(section);
                 return;
@@ -523,7 +523,6 @@
                 ["ID", asset.id],
                 ["Item type", asset.itemKind || asset.category],
                 ["Connection mode", asset.connectionMode],
-                ["Status", asset.status],
                 ["Owner", asset.owner || asset.configuredBy],
                 ["Last refresh status", lastRefresh.status],
                 ["Last refresh time", lastRefresh.time],
