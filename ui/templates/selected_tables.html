@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Selected tables - {{ selection.modelName }}</title>
+    <script>
+        const savedTheme = localStorage.getItem("portal-theme") || "light";
+        document.documentElement.dataset.theme = savedTheme;
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <main class="dashboard-shell">
+        <section class="app-shell selection-shell" aria-label="Selected tables">
+            <header class="app-header">
+                <div class="brand-block compact">
+                    <span class="brand-mark">MT</span>
+                    <div>
+                        <p class="eyebrow">Model Transformer</p>
+                        <h1>Selected tables</h1>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
+                        <span class="theme-label" id="themeLabel">Light</span>
+                    </button>
+                    <div class="user-menu" id="userMenu">
+                        <span>{{ selection.user.initials }}</span>
+                        <div>
+                            <small>Logged user</small>
+                            <strong>{{ selection.user.name }}</strong>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="selection-page">
+                <section class="selection-header">
+                    <p class="eyebrow">Selection details</p>
+                    <h2>{{ selection.modelName }}</h2>
+                </section>
+
+                <section class="selection-summary" aria-label="Selection details">
+                    <span>
+                        <strong>Workspace name</strong>
+                        <small>{{ selection.workspaceName }}</small>
+                    </span>
+                    <span>
+                        <strong>Workspace ID</strong>
+                        <small>{{ selection.workspaceId }}</small>
+                    </span>
+                    <span>
+                        <strong>Model name</strong>
+                        <small>{{ selection.modelName }}</small>
+                    </span>
+                    <span>
+                        <strong>Model ID</strong>
+                        <small>{{ selection.modelId }}</small>
+                    </span>
+                </section>
+
+                <section class="selection-tables" aria-labelledby="selectedTablesTitle">
+                    <h2 id="selectedTablesTitle">Tables</h2>
+                    {% if selection.selectedTables %}
+                        <ol>
+                            {% for table in selection.selectedTables %}
+                                <li>{{ table }}</li>
+                            {% endfor %}
+                        </ol>
+                    {% else %}
+                        <p class="empty-state">No tables were selected.</p>
+                    {% endif %}
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const themeToggle = document.getElementById("themeToggle");
+        const themeIcon = document.getElementById("themeIcon");
+        const themeLabel = document.getElementById("themeLabel");
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem("portal-theme", theme);
+            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
+            themeLabel.textContent = isDark ? "Dark" : "Light";
+            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+        }
+
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.dataset.theme || "light";
+            setTheme(currentTheme === "dark" ? "light" : "dark");
+        });
+
+        setTheme(document.documentElement.dataset.theme || "light");
+    </script>
+</body>
+</html>

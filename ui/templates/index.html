@@ -55,15 +55,13 @@
                 <section class="workspace-panel" aria-labelledby="workspaceTitle">
                     <div class="section-heading inline-heading">
                         <div>
-                            <p class="eyebrow">Accessible to you</p>
                             <h2 id="workspaceTitle">Workspaces</h2>
                         </div>
                         <span class="workspace-count" id="workspaceCount"></span>
                     </div>
 
                     <label class="search-field" for="workspaceSearch">
-                        <span>Search workspaces</span>
-                        <input id="workspaceSearch" type="search" placeholder="Search workspace name">
+                        <input id="workspaceSearch" type="search" placeholder="Search workspace name" aria-label="Search workspace name">
                     </label>
 
                     <p class="empty-state" id="workspaceEmptyState" hidden>No workspaces were returned for this Azure CLI account.</p>
@@ -80,7 +78,6 @@
                     </div>
 
                     <label class="search-field" for="assetSearch">
-                        <span>Search models and reports</span>
                         <input id="assetSearch" type="search" placeholder="Search by name, type, or owner" disabled>
                     </label>
 
@@ -96,12 +93,7 @@
                     <div class="asset-list combined-asset-list" id="assetList" hidden></div>
                 </section>
 
-                <aside class="detail-panel" aria-labelledby="detailTitle">
-                    <div class="section-heading">
-                        <p class="eyebrow">Data panel</p>
-                        <h2 id="detailTitle">Details</h2>
-                    </div>
-
+                <aside class="detail-panel" aria-label="Data pane">
                     <p class="empty-state" id="detailEmptyState">Select a model or report.</p>
                     <article class="detail-card compact-detail" id="detailContent" hidden>
                         <div class="detail-header">
@@ -109,11 +101,17 @@
                                 <p class="eyebrow" id="detailBadge"></p>
                                 <h2 id="detailName"></h2>
                             </div>
-                            <span class="status-pill" id="detailStatus"></span>
+                            <a class="detail-link" id="detailLink" href="#" target="_blank" rel="noreferrer" hidden>Open in Power BI</a>
                         </div>
 
-                        <div class="detail-meta detail-table" id="detailTable"></div>
-                        <a class="detail-link" id="detailLink" href="#" target="_blank" rel="noreferrer" hidden>Open in Power BI</a>
+                        <details class="detail-metrics-bar" id="detailMetricsBar">
+                            <summary>
+                                <span>Metrics</span>
+                                <small id="detailMetricsCount"></small>
+                            </summary>
+                            <div class="detail-meta detail-table" id="detailTable"></div>
+                        </details>
+                        <div class="detail-tables" id="detailTables"></div>
                     </article>
                 </aside>
             </div>
@@ -144,8 +142,10 @@
         const detailContent = document.getElementById("detailContent");
         const detailBadge = document.getElementById("detailBadge");
         const detailName = document.getElementById("detailName");
-        const detailStatus = document.getElementById("detailStatus");
+        const detailMetricsBar = document.getElementById("detailMetricsBar");
+        const detailMetricsCount = document.getElementById("detailMetricsCount");
         const detailTable = document.getElementById("detailTable");
+        const detailTables = document.getElementById("detailTables");
         const detailLink = document.getElementById("detailLink");
         const themeToggle = document.getElementById("themeToggle");
         const themeIcon = document.getElementById("themeIcon");
@@ -153,6 +153,7 @@
 
         const appState = {
             workspaces: [],
+            activeUser: {},
             activeWorkspaceId: null,
             activeAssetKey: null,
             activeAssetKind: "all",
@@ -208,6 +209,18 @@
             return appState.workspaces.find((workspace) => workspace.id === appState.activeWorkspaceId);
         }
 
+        function formatWorkspaceName(name) {
+            const value = String(name || "Unnamed workspace").trim();
+            const displayName = value
+                .replace(/^workspace\s*[:|-]\s*/i, "")
+                .replace(/\s*[:|-]\s*workspace$/i, "")
+                .replace(/\s+\(workspace\)$/i, "")
+                .replace(/\s+workspace$/i, "")
+                .trim();
+
+            return displayName || value;
+        }
+
         function getActiveAssets() {
             return appState.assetCache.get(appState.activeWorkspaceId) || {models: [], reports: []};
         }
@@ -232,12 +245,12 @@
             initials.textContent = user.initials || "AZ";
 
             const text = document.createElement("div");
+            const label = document.createElement("small");
             const name = document.createElement("strong");
-            const detail = document.createElement("small");
 
-            name.textContent = user.name || "Azure CLI user";
-            detail.textContent = user.email || user.tenantId || "Signed in with Azure CLI";
-            text.append(name, detail);
+            label.textContent = "Logged user";
+            name.textContent = user.name || user.email || user.tenantId || "Azure CLI user";
+            text.append(label, name);
             userMenu.append(initials, text);
         }
 
@@ -246,7 +259,7 @@
 
             const query = workspaceSearch.value;
             const filteredWorkspaces = appState.workspaces.filter((workspace) => (
-                matchesSearch(workspace, query, ["name", "type", "access", "capacity"])
+                matchesSearch(workspace, query, ["name"])
             ));
             const countText = query.trim()
                 ? `${filteredWorkspaces.length} / ${appState.workspaces.length}`
@@ -264,20 +277,10 @@
                 item.className = "workspace-item";
                 item.dataset.active = String(workspace.id === appState.activeWorkspaceId);
 
-                const body = document.createElement("span");
                 const name = document.createElement("strong");
-                const description = document.createElement("small");
-                const meta = document.createElement("small");
-                const access = document.createElement("em");
 
-                name.textContent = workspace.name;
-                description.textContent = workspace.type || "Workspace";
-                meta.className = "workspace-meta";
-                meta.textContent = workspace.capacity || "Capacity unknown";
-                body.append(name, description, meta);
-
-                access.textContent = workspace.access || "Accessible";
-                item.append(body, access);
+                name.textContent = formatWorkspaceName(workspace.name);
+                item.append(name);
                 item.addEventListener("click", () => loadWorkspaceAssets(workspace));
                 workspaceList.append(item);
             });
@@ -292,14 +295,12 @@
             const type = document.createElement("span");
             const name = document.createElement("strong");
             const owner = document.createElement("small");
-            const status = document.createElement("small");
 
             type.className = "asset-type";
             type.textContent = asset.category || asset.type || "Asset";
             name.textContent = asset.name || "Unnamed asset";
-            owner.textContent = asset.category === "Report" ? `Dataset ${asset.datasetId || "unavailable"}` : asset.owner || "Details unavailable";
-            status.textContent = asset.type && asset.type !== asset.category ? asset.type : asset.status || "Available";
-            item.append(type, name, owner, status);
+            owner.textContent = asset.owner || "Owner unavailable";
+            item.append(type, name, owner);
             item.addEventListener("click", () => selectAsset(asset));
 
             return item;
@@ -344,6 +345,9 @@
             detailEmptyState.hidden = false;
             detailContent.hidden = true;
             detailTable.replaceChildren();
+            detailTables.replaceChildren();
+            detailMetricsBar.open = false;
+            detailMetricsCount.textContent = "";
             detailLink.hidden = true;
         }
 
@@ -372,17 +376,7 @@
             return `Yes - ${days} at ${times} (${timeZone})`;
         }
 
-        function formatTableSummary(tables) {
-            if (!Array.isArray(tables) || !tables.length) {
-                return "Unavailable";
-            }
-
-            return tables
-                .map((table) => `${table.name} (${table.partitionCount || 0} partitions)`)
-                .join("; ");
-        }
-
-        function addDetailRow(label, value) {
+        function addDetailRow(target, label, value) {
             const row = document.createElement("span");
             const rowLabel = document.createElement("strong");
             const rowValue = document.createElement("small");
@@ -390,7 +384,7 @@
             rowLabel.textContent = label;
             rowValue.textContent = formatDetailValue(value);
             row.append(rowLabel, rowValue);
-            detailTable.append(row);
+            target.append(row);
         }
 
         function getAssetOpenUrl(asset) {
@@ -401,14 +395,134 @@
             return asset.webUrl || "";
         }
 
+        function openSelectedTablesPage(selectedTables, asset) {
+            const workspace = findActiveWorkspace() || {};
+            const form = document.createElement("form");
+            const input = document.createElement("input");
+            const payload = {
+                workspaceName: formatWorkspaceName(workspace.name),
+                workspaceId: workspace.id || appState.activeWorkspaceId || "",
+                modelName: asset.name || "Unnamed model",
+                modelId: asset.id || "",
+                selectedTables,
+                user: appState.activeUser || {},
+            };
+
+            form.method = "post";
+            form.action = "/selected-tables";
+            form.target = "_blank";
+            form.hidden = true;
+            input.type = "hidden";
+            input.name = "payload";
+            input.value = JSON.stringify(payload);
+            form.append(input);
+            document.body.append(form);
+            form.submit();
+            form.remove();
+        }
+
+        function renderTableValues(tables, asset) {
+            detailTables.replaceChildren();
+
+            const section = document.createElement("section");
+            const header = document.createElement("div");
+            const heading = document.createElement("h3");
+            const allLabel = document.createElement("label");
+            const allCheckbox = document.createElement("input");
+            const allText = document.createElement("span");
+
+            section.className = "table-values-panel";
+            header.className = "table-values-header";
+            heading.textContent = "Tables";
+            allLabel.className = "table-value-option";
+            allCheckbox.type = "checkbox";
+            allText.textContent = "Select All";
+
+            allLabel.append(allCheckbox, allText);
+            header.append(heading, allLabel);
+            section.append(header);
+
+            if (!Array.isArray(tables) || !tables.length) {
+                const empty = document.createElement("p");
+                empty.className = "mini-empty-state";
+                empty.textContent = "No tables available.";
+                section.append(empty);
+                detailTables.append(section);
+                return;
+            }
+
+            const list = document.createElement("div");
+            const selectionButton = document.createElement("button");
+            const rowCheckboxes = [];
+
+            list.className = "table-value-list";
+            selectionButton.className = "selected-tables-button";
+            selectionButton.type = "button";
+            selectionButton.textContent = "Open selection page";
+            selectionButton.disabled = true;
+
+            function getSelectedTables() {
+                return rowCheckboxes
+                    .filter((checkbox) => checkbox.checked)
+                    .map((checkbox) => checkbox.dataset.tableName);
+            }
+
+            function syncAllCheckbox() {
+                const checkedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+                allCheckbox.checked = checkedCount === rowCheckboxes.length;
+                allCheckbox.indeterminate = checkedCount > 0 && checkedCount < rowCheckboxes.length;
+                selectionButton.disabled = checkedCount === 0;
+            }
+
+            tables.forEach((table) => {
+                const row = document.createElement("article");
+                const checkboxLabel = document.createElement("label");
+                const checkbox = document.createElement("input");
+                const tableName = document.createElement("span");
+                const tableDisplayName = table.name || "Unnamed table";
+
+                row.className = "table-value-row";
+                checkboxLabel.className = "table-value-option";
+                checkbox.type = "checkbox";
+                checkbox.dataset.tableName = tableDisplayName;
+                tableName.textContent = tableDisplayName;
+
+                checkbox.addEventListener("change", syncAllCheckbox);
+
+                rowCheckboxes.push(checkbox);
+                checkboxLabel.append(checkbox, tableName);
+                row.append(checkboxLabel);
+                list.append(row);
+            });
+
+            allCheckbox.addEventListener("change", () => {
+                const shouldSelectTables = allCheckbox.checked;
+
+                rowCheckboxes.forEach((checkbox) => {
+                    checkbox.checked = shouldSelectTables;
+                    checkbox.dispatchEvent(new Event("change"));
+                });
+                allCheckbox.indeterminate = false;
+            });
+
+            selectionButton.addEventListener("click", () => {
+                const selectedTables = getSelectedTables();
+                if (selectedTables.length) {
+                    openSelectedTablesPage(selectedTables, asset);
+                }
+            });
+
+            section.append(list, selectionButton);
+            detailTables.append(section);
+        }
+
         function renderDetail(asset) {
             const lastRefresh = asset.lastRefresh || {};
             const refreshSchedule = asset.refreshSchedule || {};
-            const rows = [
+            const metricRows = [
                 ["ID", asset.id],
                 ["Item type", asset.itemKind || asset.category],
                 ["Connection mode", asset.connectionMode],
-                ["Status", asset.status],
                 ["Owner", asset.owner || asset.configuredBy],
                 ["Last refresh status", lastRefresh.status],
                 ["Last refresh time", lastRefresh.time],
@@ -417,11 +531,10 @@
                 ["Table count", asset.tableCount],
                 ["Has partitions", asset.hasPartitions],
                 ["Partition count", asset.partitionCount],
-                ["Tables", formatTableSummary(asset.tables)],
             ];
 
             if (asset.category !== "Model") {
-                rows.push(
+                metricRows.push(
                     ["Dataset ID", asset.datasetId],
                     ["Semantic model mode", asset.semanticModelConnectionMode],
                     ["Embed URL", asset.embedUrl],
@@ -431,9 +544,12 @@
 
             detailBadge.textContent = asset.category || "Asset";
             detailName.textContent = asset.name || "Unnamed asset";
-            detailStatus.textContent = asset.status || "Available";
             detailTable.replaceChildren();
-            rows.forEach(([label, value]) => addDetailRow(label, value));
+            detailTables.replaceChildren();
+            detailMetricsBar.open = false;
+            detailMetricsCount.textContent = `${metricRows.length} fields`;
+            metricRows.forEach(([label, value]) => addDetailRow(detailTable, label, value));
+            renderTableValues(asset.tables, asset);
 
             const openUrl = getAssetOpenUrl(asset);
             if (openUrl) {
@@ -488,7 +604,7 @@
             appState.detailCache.clear();
             assetSearch.value = "";
             renderWorkspaces();
-            selectedWorkspaceLabel.textContent = workspace.name;
+            selectedWorkspaceLabel.textContent = formatWorkspaceName(workspace.name);
             assetCount.textContent = "";
             assetError.textContent = "";
             clearDetail("Select a model or report.");
@@ -526,6 +642,7 @@
             loginScreen.hidden = true;
             appShell.hidden = false;
             appState.workspaces = data.workspaces || [];
+            appState.activeUser = data.user || {};
             appState.activeWorkspaceId = null;
             appState.activeAssetKey = null;
             appState.activeAssetKind = "all";
