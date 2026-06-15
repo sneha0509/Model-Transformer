@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import AzureCliCredential, CredentialUnavailableError
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 
 app = Flask(__name__, static_folder="templates/static")
@@ -132,10 +132,11 @@ def get_power_bi_workspace_assets(access_token, workspace_id):
     workspace_url = POWER_BI_GROUP_URL.format(workspace_id=workspace_id)
     datasets = power_bi_get(access_token, f"{workspace_url}/datasets")
     reports = power_bi_get(access_token, f"{workspace_url}/reports")
+    dataset_owners = {dataset.get("id"): dataset.get("configuredBy") for dataset in datasets if dataset.get("id")}
 
     return {
         "models": [normalize_model(dataset, workspace_id) for dataset in datasets],
-        "reports": [normalize_report(report) for report in reports],
+        "reports": [normalize_report(report, dataset_owners) for report in reports],
     }
 
 
@@ -363,16 +364,11 @@ def build_report_details(report, semantic_metadata):
 
 def normalize_workspace(workspace):
     workspace_type = workspace.get("type") or "Workspace"
-    is_read_only = workspace.get("isReadOnly")
-    access = "Read only" if is_read_only else "Editable"
-    capacity = "Dedicated capacity" if workspace.get("isOnDedicatedCapacity") else "Shared capacity"
 
     return {
         "id": workspace.get("id"),
         "name": workspace.get("name") or "Unnamed workspace",
         "type": workspace_type,
-        "access": access,
-        "capacity": capacity,
     }
 
 
@@ -403,15 +399,16 @@ def normalize_model(dataset, workspace_id):
     }
 
 
-def normalize_report(report):
+def normalize_report(report, dataset_owners=None):
     report_type = report.get("reportType") or "Report"
+    owner = report.get("createdBy") or (dataset_owners or {}).get(report.get("datasetId")) or "Owner unavailable"
 
     return {
         "category": "Report",
         "id": report.get("id"),
         "name": report.get("name") or "Unnamed report",
         "type": report_type,
-        "owner": report.get("datasetId") or "Dataset unavailable",
+        "owner": owner,
         "datasetId": report.get("datasetId", ""),
         "embedUrl": report.get("embedUrl", ""),
         "status": "Report",
@@ -442,6 +439,47 @@ def build_user(account):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+def normalize_selected_tables_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    selected_tables = payload.get("selectedTables") if isinstance(payload, dict) else []
+    if not isinstance(selected_tables, list):
+        selected_tables = []
+
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    user_name = str(user.get("name") or "Azure CLI user")
+    user_email = str(user.get("email") or "")
+    user_tenant_id = str(user.get("tenantId") or "")
+
+    return {
+        "workspaceName": str(payload.get("workspaceName") or "Unavailable"),
+        "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
+        "modelName": str(payload.get("modelName") or "Unavailable"),
+        "modelId": str(payload.get("modelId") or "Unavailable"),
+        "selectedTables": [str(table).strip() for table in selected_tables if str(table).strip()],
+        "user": {
+            "name": user_name,
+            "email": user_email,
+            "tenantId": user_tenant_id,
+            "subscription": str(user.get("subscription") or ""),
+            "initials": str(user.get("initials") or get_initials(user_name)),
+            "detail": user_email or user_tenant_id or "Signed in with Azure CLI",
+        },
+    }
+
+
+@app.post("/selected-tables")
+def selected_tables():
+    payload = request.get_json(silent=True) if request.is_json else None
+    if payload is None:
+        try:
+            payload = json.loads(request.form.get("payload", "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+
+    selection = normalize_selected_tables_payload(payload)
+    return render_template("selected_tables.html", selection=selection)
 
 
 @app.post("/api/login")
