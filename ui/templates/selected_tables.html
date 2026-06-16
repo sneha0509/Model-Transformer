@@ -28,7 +28,6 @@
                         <span class="theme-label" id="themeLabel">Light</span>
                     </button>
                     <div class="user-menu" id="userMenu">
-                        <span>{{ selection.user.initials }}</span>
                         <div>
                             <small>Logged user</small>
                             <strong>{{ selection.user.name }}</strong>
@@ -38,41 +37,74 @@
             </header>
 
             <div class="selection-page">
-                <section class="selection-header">
-                    <p class="eyebrow">Selection details</p>
-                    <h2>{{ selection.modelName }}</h2>
+                <section class="selection-header selection-details-section" aria-label="Model details">
+                    <div class="selection-model-identity">
+                        <h2>{{ selection.modelName }}</h2>
+                        <p>{{ selection.workspaceName }}</p>
+                    </div>
                 </section>
 
-                <section class="selection-summary" aria-label="Selection details">
-                    <span>
-                        <strong>Workspace name</strong>
-                        <small>{{ selection.workspaceName }}</small>
-                    </span>
-                    <span>
-                        <strong>Workspace ID</strong>
-                        <small>{{ selection.workspaceId }}</small>
-                    </span>
-                    <span>
-                        <strong>Model name</strong>
-                        <small>{{ selection.modelName }}</small>
-                    </span>
-                    <span>
-                        <strong>Model ID</strong>
-                        <small>{{ selection.modelId }}</small>
-                    </span>
-                </section>
+                <section class="batch-workspace" aria-label="Table batches">
+                    <div class="table-source-panel" aria-labelledby="selectedTablesTitle">
+                        <div class="batch-panel-heading">
+                            <div>
+                                <p class="eyebrow">Table name</p>
+                                <h2 id="selectedTablesTitle">Selected tables</h2>
+                            </div>
+                            <button class="ai-refresh-button" id="aiRefreshButton" type="button" {% if not selection.selectedTables %}disabled{% endif %}>
+                                AI Refresh
+                            </button>
+                        </div>
 
-                <section class="selection-tables" aria-labelledby="selectedTablesTitle">
-                    <h2 id="selectedTablesTitle">Tables</h2>
-                    {% if selection.selectedTables %}
-                        <ol>
-                            {% for table in selection.selectedTables %}
-                                <li>{{ table }}</li>
+                        {% if selection.selectedTables %}
+                            <div class="table-drag-list" id="tableSourceList" aria-label="Available selected tables">
+                                {% for table in selection.selectedTables %}
+                                    <article class="table-drag-item" draggable="true" data-table-name="{{ table }}">
+                                        <strong class="table-name-label">{{ table }}</strong>
+                                        <small class="table-batch-label">No batches assigned</small>
+                                    </article>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="table-drag-list empty-drop-zone" id="tableSourceList" data-drop-zone="source" aria-label="Available selected tables">
+                                <p class="empty-state">No tables were selected.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="batch-list-panel" aria-labelledby="batchesTitle">
+                        <div class="batch-panel-heading">
+                            <div>
+                                <p class="eyebrow">Batches division</p>
+                                <h2 id="batchesTitle">Batch list</h2>
+                            </div>
+                            <button class="add-batch-button" id="addBatchButton" type="button">Add batch</button>
+                        </div>
+
+                        <div class="batch-list" id="batchList">
+                            {% for batch_number in range(1, 2) %}
+                                <section class="batch-card" aria-labelledby="batch{{ batch_number }}Title">
+                                    <div class="batch-card-header">
+                                        <h3 id="batch{{ batch_number }}Title">Batch {{ batch_number }}</h3>
+                                        <div class="batch-card-actions">
+                                            <span class="batch-count">0 tables</span>
+                                            <button class="remove-batch-button" type="button" aria-label="Remove Batch {{ batch_number }}">Remove</button>
+                                        </div>
+                                    </div>
+                                    <div class="batch-drop-zone" data-drop-zone="batch" aria-label="Batch {{ batch_number }} drop zone">
+                                        <p class="batch-drop-hint">Drop tables here</p>
+                                    </div>
+                                </section>
                             {% endfor %}
-                        </ol>
-                    {% else %}
-                        <p class="empty-state">No tables were selected.</p>
-                    {% endif %}
+                        </div>
+
+                        <div class="batch-save-row">
+                            <label class="save-later-option" for="saveForLaterCheckbox">
+                                <input id="saveForLaterCheckbox" type="checkbox">
+                                <span>Save it for later</span>
+                            </label>
+                        </div>
+                    </div>
                 </section>
             </div>
         </section>
@@ -82,6 +114,14 @@
         const themeToggle = document.getElementById("themeToggle");
         const themeIcon = document.getElementById("themeIcon");
         const themeLabel = document.getElementById("themeLabel");
+        const tableSourceList = document.getElementById("tableSourceList");
+        const batchList = document.getElementById("batchList");
+        const aiRefreshButton = document.getElementById("aiRefreshButton");
+        const addBatchButton = document.getElementById("addBatchButton");
+        const saveForLaterCheckbox = document.getElementById("saveForLaterCheckbox");
+        const selectionPayload = {{ selection | tojson }};
+
+        let draggedTable = null;
 
         function setTheme(theme) {
             const isDark = theme === "dark";
@@ -95,6 +135,300 @@
         themeToggle.addEventListener("click", () => {
             const currentTheme = document.documentElement.dataset.theme || "light";
             setTheme(currentTheme === "dark" ? "light" : "dark");
+        });
+
+        function getTableItems() {
+            return Array.from(document.querySelectorAll(".table-drag-item"));
+        }
+
+        function getDropZones() {
+            return Array.from(document.querySelectorAll("[data-drop-zone]"));
+        }
+
+        function getBatchCards() {
+            return Array.from(document.querySelectorAll(".batch-card"));
+        }
+
+        function updateBatchCounts() {
+            const batchCards = getBatchCards();
+
+            getBatchCards().forEach((batchCard) => {
+                const count = batchCard.querySelectorAll(".batch-table-item").length;
+                const countLabel = batchCard.querySelector(".batch-count");
+                const hint = batchCard.querySelector(".batch-drop-hint");
+                const removeButton = batchCard.querySelector(".remove-batch-button");
+
+                countLabel.textContent = `${count} ${count === 1 ? "table" : "tables"}`;
+                hint.hidden = count > 0;
+                if (removeButton) {
+                    removeButton.disabled = batchCards.length === 1;
+                }
+            });
+            updateTableBatchLabels();
+        }
+
+        function getBatchName(batchCard) {
+            const title = batchCard ? batchCard.querySelector("h3") : null;
+            return title ? title.textContent.trim() : "Batch";
+        }
+
+        function getTableName(tableItem) {
+            return tableItem.dataset.tableName || tableItem.textContent.trim();
+        }
+
+        function getAssignedBatchNumbers(tableName) {
+            return getBatchCards()
+            .map((batchCard, index) => ({batchCard, batchNumber: index + 1}))
+            .filter(({batchCard}) => Array.from(batchCard.querySelectorAll(".batch-table-item")).some((item) => getTableName(item) === tableName))
+            .map(({batchNumber}) => batchNumber);
+        }
+
+        function updateTableBatchLabels() {
+            getTableItems().forEach((tableItem) => {
+                const label = tableItem.querySelector(".table-batch-label");
+                const batchNumbers = getAssignedBatchNumbers(getTableName(tableItem));
+
+                if (!label) {
+                    return;
+                }
+
+                label.textContent = batchNumbers.length ? `batches: ${batchNumbers.join(", ")}` : "No batches assigned";
+            });
+        }
+
+        function createBatchTableItem(tableName, batchCard) {
+            const item = document.createElement("article");
+            const name = document.createElement("span");
+            const removeButton = document.createElement("button");
+
+            item.className = "batch-table-item";
+            item.dataset.tableName = tableName;
+            name.textContent = tableName;
+            removeButton.className = "remove-table-assignment-button";
+            removeButton.type = "button";
+            removeButton.textContent = "Remove";
+            removeButton.setAttribute("aria-label", `Remove ${tableName} from ${getBatchName(batchCard)}`);
+            removeButton.addEventListener("click", () => {
+                item.remove();
+                updateBatchCounts();
+            });
+
+            item.append(name, removeButton);
+            return item;
+        }
+
+        function assignTableNameToBatch(tableName, dropZone, sourceTableItem = null) {
+            const batchCard = dropZone ? dropZone.closest(".batch-card") : null;
+
+            if (!tableName || !batchCard) {
+                return;
+            }
+
+            const hasAssignment = Array.from(dropZone.querySelectorAll(".batch-table-item")).some((item) => getTableName(item) === tableName);
+
+            if (hasAssignment) {
+                updateBatchCounts();
+                return;
+            }
+
+            dropZone.append(createBatchTableItem(tableName, batchCard));
+            if (sourceTableItem) {
+                sourceTableItem.classList.remove("is-dragging");
+            }
+            updateBatchCounts();
+        }
+
+        function assignTableToBatch(tableItem, dropZone) {
+            assignTableNameToBatch(tableItem ? getTableName(tableItem) : "", dropZone, tableItem);
+        }
+
+        function renumberBatches() {
+            getBatchCards().forEach((batchCard, index) => {
+                const batchNumber = index + 1;
+                const title = batchCard.querySelector("h3");
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
+                const removeButton = batchCard.querySelector(".remove-batch-button");
+                const titleId = `batch${batchNumber}Title`;
+
+                batchCard.setAttribute("aria-labelledby", titleId);
+                title.id = titleId;
+                title.textContent = `Batch ${batchNumber}`;
+                dropZone.setAttribute("aria-label", `Batch ${batchNumber} drop zone`);
+                removeButton.setAttribute("aria-label", `Remove Batch ${batchNumber}`);
+                dropZone.querySelectorAll(".batch-table-item").forEach((tableItem) => {
+                    const tableName = getTableName(tableItem);
+                    const assignmentButton = tableItem.querySelector(".remove-table-assignment-button");
+
+                    assignmentButton.setAttribute("aria-label", `Remove ${tableName} from Batch ${batchNumber}`);
+                });
+            });
+        }
+
+        function removeBatch(batchCard) {
+            if (!batchCard || getBatchCards().length === 1) {
+                return;
+            }
+
+            batchCard.remove();
+            renumberBatches();
+            updateBatchCounts();
+        }
+
+        function registerDropZone(dropZone) {
+            dropZone.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                dropZone.classList.add("is-drag-over");
+            });
+
+            dropZone.addEventListener("dragleave", () => {
+                dropZone.classList.remove("is-drag-over");
+            });
+
+            dropZone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                dropZone.classList.remove("is-drag-over");
+                const droppedTableName = event.dataTransfer.getData("text/plain");
+                assignTableNameToBatch(droppedTableName || (draggedTable ? getTableName(draggedTable) : ""), dropZone, draggedTable);
+            });
+        }
+
+        function registerTableItem(tableItem) {
+            tableItem.addEventListener("dragstart", (event) => {
+                draggedTable = tableItem;
+                tableItem.classList.add("is-dragging");
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData("text/plain", tableItem.dataset.tableName || tableItem.textContent.trim());
+            });
+
+            tableItem.addEventListener("dragend", () => {
+                tableItem.classList.remove("is-dragging");
+                getDropZones().forEach((dropZone) => dropZone.classList.remove("is-drag-over"));
+                draggedTable = null;
+            });
+        }
+
+        function createBatchCard(batchNumber) {
+            const card = document.createElement("section");
+            const header = document.createElement("div");
+            const title = document.createElement("h3");
+            const actions = document.createElement("div");
+            const count = document.createElement("span");
+            const removeButton = document.createElement("button");
+            const dropZone = document.createElement("div");
+            const hint = document.createElement("p");
+            const titleId = `batch${batchNumber}Title`;
+
+            card.className = "batch-card";
+            card.setAttribute("aria-labelledby", titleId);
+            header.className = "batch-card-header";
+            actions.className = "batch-card-actions";
+            title.id = titleId;
+            title.textContent = `Batch ${batchNumber}`;
+            count.className = "batch-count";
+            count.textContent = "0 tables";
+            removeButton.className = "remove-batch-button";
+            removeButton.type = "button";
+            removeButton.textContent = "Remove";
+            removeButton.setAttribute("aria-label", `Remove Batch ${batchNumber}`);
+            dropZone.className = "batch-drop-zone";
+            dropZone.dataset.dropZone = "batch";
+            dropZone.setAttribute("aria-label", `Batch ${batchNumber} drop zone`);
+            hint.className = "batch-drop-hint";
+            hint.textContent = "Drop tables here";
+
+            removeButton.addEventListener("click", () => removeBatch(card));
+            actions.append(count, removeButton);
+            header.append(title, actions);
+            dropZone.append(hint);
+            card.append(header, dropZone);
+            registerDropZone(dropZone);
+            return card;
+        }
+
+        function distributeTablesAcrossBatches() {
+            const items = getTableItems();
+            const zones = Array.from(document.querySelectorAll(".batch-drop-zone"));
+
+            if (!items.length || !zones.length) {
+                return;
+            }
+
+            items.forEach((item, index) => {
+                assignTableToBatch(item, zones[index % zones.length]);
+            });
+            updateBatchCounts();
+        }
+
+        function buildSavedBatchesPayload() {
+            const batches = getBatchCards().map((batchCard, index) => {
+                const title = batchCard.querySelector("h3");
+                const tables = Array.from(batchCard.querySelectorAll(".batch-table-item")).map(getTableName);
+
+                return {
+                    name: title ? title.textContent.trim() : `Batch ${index + 1}`,
+                    tables,
+                };
+            });
+
+            return {
+                savedAt: new Date().toISOString(),
+                workspaceName: selectionPayload.workspaceName || "Unavailable",
+                workspaceId: selectionPayload.workspaceId || "Unavailable",
+                modelName: selectionPayload.modelName || "Unavailable",
+                modelId: selectionPayload.modelId || "Unavailable",
+                selectedTables: selectionPayload.selectedTables || [],
+                unassignedTables: getTableItems()
+                    .filter((tableItem) => getAssignedBatchNumbers(getTableName(tableItem)).length === 0)
+                    .map(getTableName),
+                batches,
+                user: selectionPayload.user || {},
+            };
+        }
+
+        function openSavedBatchesPage(payload) {
+            const form = document.createElement("form");
+            const input = document.createElement("input");
+
+            form.method = "post";
+            form.action = "/saved-batches";
+            form.target = "_blank";
+            form.hidden = true;
+            input.type = "hidden";
+            input.name = "payload";
+            input.value = JSON.stringify(payload);
+            form.append(input);
+            document.body.append(form);
+            form.submit();
+            form.remove();
+        }
+
+        function saveBatchesForLater() {
+            const payload = buildSavedBatchesPayload();
+
+            localStorage.setItem("model-transformer-saved-batches", JSON.stringify(payload));
+            openSavedBatchesPage(payload);
+        }
+
+        getDropZones().forEach(registerDropZone);
+        getTableItems().forEach(registerTableItem);
+        document.querySelectorAll(".remove-batch-button").forEach((button) => {
+            button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
+        });
+        updateBatchCounts();
+
+        aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
+        addBatchButton.addEventListener("click", () => {
+            const batchNumber = getBatchCards().length + 1;
+            batchList.append(createBatchCard(batchNumber));
+            updateBatchCounts();
+        });
+        saveForLaterCheckbox.addEventListener("change", () => {
+            if (!saveForLaterCheckbox.checked) {
+                return;
+            }
+
+            saveBatchesForLater();
+            saveForLaterCheckbox.checked = false;
         });
 
         setTheme(document.documentElement.dataset.theme || "light");

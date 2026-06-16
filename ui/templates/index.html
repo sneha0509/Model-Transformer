@@ -241,9 +241,6 @@
         function renderUser(user) {
             userMenu.replaceChildren();
 
-            const initials = document.createElement("span");
-            initials.textContent = user.initials || "AZ";
-
             const text = document.createElement("div");
             const label = document.createElement("small");
             const name = document.createElement("strong");
@@ -251,7 +248,7 @@
             label.textContent = "Logged user";
             name.textContent = user.name || user.email || user.tenantId || "Azure CLI user";
             text.append(label, name);
-            userMenu.append(initials, text);
+            userMenu.append(text);
         }
 
         function renderWorkspaces() {

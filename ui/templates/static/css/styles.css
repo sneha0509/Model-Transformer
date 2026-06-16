@@ -902,22 +902,74 @@ h3 {
 .selection-page {
     display: grid;
     gap: 18px;
-    width: min(860px, calc(100% - 32px));
+    width: min(1180px, calc(100% - 32px));
     margin: 0 auto;
-    padding: 36px 0;
+    padding: 0 0 36px;
 }
 
 .selection-header,
 .selection-summary,
-.selection-tables {
+.selection-tables,
+.table-source-panel,
+.batch-list-panel {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
 }
 
 .selection-header,
-.selection-tables {
+.selection-tables,
+.table-source-panel,
+.batch-list-panel {
     padding: 20px;
+}
+
+.selection-details-section {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.selection-model-identity {
+    min-width: 0;
+    text-align: left;
+}
+
+.selection-model-identity h2 {
+    margin-bottom: 6px;
+    overflow-wrap: anywhere;
+    font-size: clamp(1.65rem, 2.5vw, 2.35rem);
+    line-height: 1.08;
+}
+
+.selection-model-identity p {
+    margin-bottom: 0;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.selection-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.selection-detail-grid span {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--surface-strong);
+}
+
+.selection-detail-grid small {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
+    font-weight: 700;
 }
 
 .selection-summary {
@@ -941,6 +993,305 @@ h3 {
     overflow-wrap: anywhere;
     font-size: 0.9rem;
     font-weight: 700;
+}
+
+.batch-workspace {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.table-source-panel,
+.batch-list-panel {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+
+.batch-panel-heading,
+.batch-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.batch-panel-heading h2,
+.batch-card-header h3 {
+    margin-bottom: 0;
+}
+
+.ai-refresh-button,
+.add-batch-button {
+    display: inline-flex;
+    min-height: 38px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--primary);
+    font-size: 0.82rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.add-batch-button {
+    border: 1px solid var(--border);
+    color: var(--primary-strong);
+    background: var(--primary-soft);
+}
+
+.ai-refresh-button:hover:not(:disabled),
+.add-batch-button:hover {
+    background: var(--primary-strong);
+    color: #ffffff;
+}
+
+.ai-refresh-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.table-drag-list,
+.batch-drop-zone {
+    display: grid;
+    gap: 8px;
+    min-height: 170px;
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: var(--surface-strong);
+    transition: border-color 160ms ease, background 160ms ease;
+}
+
+.table-drag-list.is-drag-over,
+.batch-drop-zone.is-drag-over {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+}
+
+.table-drag-list.empty-drop-zone {
+    align-content: center;
+}
+
+.table-drag-list .empty-state {
+    margin: 0;
+}
+
+.table-drag-item {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    min-height: 54px;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface);
+    font-weight: 800;
+    overflow-wrap: anywhere;
+    user-select: none;
+}
+
+.table-drag-item:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+}
+
+.table-drag-item.is-dragging {
+    opacity: 1;
+    box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.table-name-label,
+.table-batch-label,
+.batch-table-item span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.table-name-label {
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.table-batch-label {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.batch-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.batch-card {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-strong);
+}
+
+.batch-card-header h3 {
+    color: var(--text);
+    font-size: 0.84rem;
+}
+
+.batch-card-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
+.batch-count {
+    flex: 0 0 auto;
+    padding: 4px 7px;
+    border-radius: 999px;
+    color: var(--primary-strong);
+    background: var(--primary-soft);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.remove-batch-button {
+    min-height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--danger);
+    background: var(--surface);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.remove-batch-button:hover:not(:disabled) {
+    border-color: var(--danger);
+    background: var(--accent-soft);
+}
+
+.remove-batch-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.batch-drop-zone {
+    align-content: start;
+    min-height: 62px;
+    background: var(--surface);
+}
+
+.batch-table-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface-strong);
+    font-weight: 800;
+}
+
+.remove-table-assignment-button {
+    min-height: 26px;
+    flex: 0 0 auto;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--danger);
+    background: var(--surface);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.remove-table-assignment-button:hover {
+    border-color: var(--danger);
+    background: var(--accent-soft);
+}
+
+.batch-drop-hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.batch-drop-hint {
+    align-self: center;
+    justify-self: center;
+    padding: 10px;
+}
+
+.batch-save-row {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.save-later-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface-strong);
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+
+.save-later-option:hover {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+}
+
+.save-later-option input {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--primary);
+}
+
+.saved-json-panel {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.saved-json-block {
+    min-height: 360px;
+    max-height: 62vh;
+    margin: 0;
+    overflow: auto;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface-strong);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
 }
 
 .selection-tables h2 {
@@ -1047,6 +1398,8 @@ tr:last-child td {
     .portal-layout,
     .two-column-layout,
     .three-column-layout,
+    .batch-workspace,
+    .selection-details-section,
     .asset-columns {
         grid-template-columns: 1fr;
     }
@@ -1077,6 +1430,7 @@ tr:last-child td {
     .app-header,
     .detail-header,
     .detail-meta,
+    .selection-detail-grid,
     .selection-summary,
     .detail-metrics {
         grid-template-columns: 1fr;
@@ -1108,13 +1462,31 @@ tr:last-child td {
     }
 
     .table-values-header,
-    .table-value-row {
+    .table-value-row,
+    .batch-panel-heading {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .selected-tables-button {
+    .selected-tables-button,
+    .ai-refresh-button,
+    .add-batch-button {
         justify-self: stretch;
+        width: 100%;
+    }
+
+    .batch-card-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .batch-save-row {
+        justify-content: stretch;
+    }
+
+    .save-later-option {
+        width: 100%;
+        justify-content: center;
     }
 
     h1 {
