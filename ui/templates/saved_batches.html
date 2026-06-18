@@ -59,6 +59,22 @@
                         <strong>Assigned tables</strong>
                         <small>{{ saved.assignedTableCount }}</small>
                     </span>
+                    <span>
+                        <strong>Timeout</strong>
+                        <small>{{ saved.batchCreationSettings.timeoutMinutes }} minutes</small>
+                    </span>
+                    <span>
+                        <strong>Commit mode</strong>
+                        <small>{{ saved.batchCreationSettings.commitMode.replace('-', ' ').title() }}</small>
+                    </span>
+                    <span>
+                        <strong>Max parallelism</strong>
+                        <small>{{ saved.batchCreationSettings.maxParallelism }}</small>
+                    </span>
+                    <span>
+                        <strong>Retry count</strong>
+                        <small>{{ saved.batchCreationSettings.retryCount }}</small>
+                    </span>
                 </section>
 
                 <section class="saved-json-panel" aria-labelledby="savedJsonTitle">

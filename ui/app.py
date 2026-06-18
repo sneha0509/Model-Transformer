@@ -472,6 +472,7 @@ def normalize_selected_tables_payload(payload):
 def normalize_saved_batches_payload(payload):
     payload = payload if isinstance(payload, dict) else {}
     batches = payload.get("batches") if isinstance(payload.get("batches"), list) else []
+    batch_creation_settings = payload.get("batchCreationSettings") if isinstance(payload.get("batchCreationSettings"), dict) else {}
 
     normalized_batches = []
     for index, batch in enumerate(batches, start=1):
@@ -489,6 +490,32 @@ def normalize_saved_batches_payload(payload):
     unassigned_tables = payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else []
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
     user_name = str(user.get("name") or "Azure CLI user")
+    timeout_minutes = batch_creation_settings.get("timeoutMinutes")
+    max_parallelism = batch_creation_settings.get("maxParallelism")
+    retry_count = batch_creation_settings.get("retryCount")
+    commit_mode = str(batch_creation_settings.get("commitMode") or "transactional")
+
+    try:
+        timeout_minutes = int(timeout_minutes)
+    except (TypeError, ValueError):
+        timeout_minutes = 30
+    try:
+        max_parallelism = int(max_parallelism)
+    except (TypeError, ValueError):
+        max_parallelism = 4
+    try:
+        retry_count = int(retry_count)
+    except (TypeError, ValueError):
+        retry_count = 3
+
+    if timeout_minutes < 1:
+        timeout_minutes = 30
+    if max_parallelism < 1:
+        max_parallelism = 4
+    if retry_count < 0:
+        retry_count = 3
+    if commit_mode not in {"transactional", "partial-batch"}:
+        commit_mode = "transactional"
 
     saved = {
         "savedAt": str(payload.get("savedAt") or "Unavailable"),
@@ -498,13 +525,18 @@ def normalize_saved_batches_payload(payload):
         "modelId": str(payload.get("modelId") or "Unavailable"),
         "selectedTables": [str(table).strip() for table in selected_tables if str(table).strip()],
         "unassignedTables": [str(table).strip() for table in unassigned_tables if str(table).strip()],
+        "batchCreationSettings": {
+            "timeoutMinutes": timeout_minutes,
+            "commitMode": commit_mode,
+            "maxParallelism": max_parallelism,
+            "retryCount": retry_count,
+        },
         "batches": normalized_batches,
         "user": {
             "name": user_name,
             "email": str(user.get("email") or ""),
             "tenantId": str(user.get("tenantId") or ""),
             "subscription": str(user.get("subscription") or ""),
-            "initials": str(user.get("initials") or get_initials(user_name)),
         },
     }
     saved["batchCount"] = len(saved["batches"])
