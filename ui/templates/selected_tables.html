@@ -28,7 +28,6 @@
                         <span class="theme-label" id="themeLabel">Light</span>
                     </button>
                     <div class="user-menu" id="userMenu">
-                        <span>{{ selection.user.initials }}</span>
                         <div>
                             <small>Logged user</small>
                             <strong>{{ selection.user.name }}</strong>
@@ -38,41 +37,122 @@
             </header>
 
             <div class="selection-page">
-                <section class="selection-header">
-                    <p class="eyebrow">Selection details</p>
-                    <h2>{{ selection.modelName }}</h2>
+                <section class="selection-header selection-details-section" aria-label="Model details">
+                    <div class="selection-model-identity">
+                        <h2>{{ selection.modelName }}</h2>
+                        <p>{{ selection.workspaceName }}</p>
+                    </div>
                 </section>
 
-                <section class="selection-summary" aria-label="Selection details">
-                    <span>
-                        <strong>Workspace name</strong>
-                        <small>{{ selection.workspaceName }}</small>
-                    </span>
-                    <span>
-                        <strong>Workspace ID</strong>
-                        <small>{{ selection.workspaceId }}</small>
-                    </span>
-                    <span>
-                        <strong>Model name</strong>
-                        <small>{{ selection.modelName }}</small>
-                    </span>
-                    <span>
-                        <strong>Model ID</strong>
-                        <small>{{ selection.modelId }}</small>
-                    </span>
+                <section class="ai-batch-section" aria-labelledby="aiBatchTitle">
+                    <div class="ai-batch-heading">
+                        <h2 id="aiBatchTitle">Control Panel</h2>
+                        <div class="ai-left-action">
+                            <p class="ai-left-description">Create intelligent AI-powered refresh batches. The engine analyzes model dependencies, relationships, data volume, partitioning strategy, and workspace capacity signals such as CPU and bandwidth to generate an optimized batch plan for the model.</p>
+                            <button class="ai-refresh-button ai-batch-action" id="aiRefreshButton" type="button" {% if not selection.selectedTables %}disabled{% endif %}>
+                                AI Powered Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="ai-control-panel" aria-label="AI batch creation controls">
+                        <div class="control-tuning-grid" aria-label="Batch execution settings">
+                            <label class="control-field" for="batchTimeoutInput">
+                                <span>Timeout</span>
+                                <input id="batchTimeoutInput" type="number" min="1" step="1" value="30" inputmode="numeric">
+                                <small>Minutes</small>
+                            </label>
+
+                            <label class="control-field" for="maxParallelismInput">
+                                <span>Max Parallelism</span>
+                                <input id="maxParallelismInput" type="number" min="1" step="1" value="4" inputmode="numeric">
+                                <small>Concurrent batches</small>
+                            </label>
+
+                            <label class="control-field" for="retryCountInput">
+                                <span>Retry count</span>
+                                <input id="retryCountInput" type="number" min="0" step="1" value="3" inputmode="numeric">
+                                <small>Attempts</small>
+                            </label>
+                        </div>
+
+                        <div class="control-mode-action-row">
+                            <div class="control-field commit-mode-field">
+                                <span id="commitModeLabel">Commit mode</span>
+                                <div class="commit-mode-switch" role="radiogroup" aria-labelledby="commitModeLabel">
+                                    <input class="commit-mode-input" id="commitModeTransactional" name="commitMode" type="radio" value="transactional" checked>
+                                    <label for="commitModeTransactional">Transactional</label>
+                                    <input class="commit-mode-input" id="commitModePartialBatch" name="commitMode" type="radio" value="partial-batch">
+                                    <label for="commitModePartialBatch">Partial batch</label>
+                                </div>
+                            </div>
+
+                            <div class="control-empty-cell" aria-hidden="true"></div>
+                        </div>
+                    </div>
                 </section>
 
-                <section class="selection-tables" aria-labelledby="selectedTablesTitle">
-                    <h2 id="selectedTablesTitle">Tables</h2>
-                    {% if selection.selectedTables %}
-                        <ol>
-                            {% for table in selection.selectedTables %}
-                                <li>{{ table }}</li>
+                <section class="batch-workspace" aria-label="Table batches">
+                    <div class="table-source-panel" aria-labelledby="selectedTablesTitle">
+                        <div class="batch-panel-heading">
+                            <div>
+                                <p class="eyebrow">Table name</p>
+                                <h2 id="selectedTablesTitle">Selected tables</h2>
+                            </div>
+                        </div>
+
+                        {% if selection.selectedTables %}
+                            <div class="table-drag-list" id="tableSourceList" aria-label="Available selected tables">
+                                {% for table in selection.selectedTables %}
+                                    <article class="table-drag-item" draggable="true" data-table-name="{{ table }}">
+                                        <strong class="table-name-label">{{ table }}</strong>
+                                        <div class="table-batch-label" aria-label="Batch assignments">
+                                            <span class="table-batch-empty">No batches assigned</span>
+                                        </div>
+                                    </article>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="table-drag-list empty-drop-zone" id="tableSourceList" data-drop-zone="source" aria-label="Available selected tables">
+                                <p class="empty-state">No tables were selected.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="batch-list-panel" aria-labelledby="batchesTitle">
+                        <div class="batch-panel-heading">
+                            <div>
+                                <p class="eyebrow">Batches division</p>
+                                <h2 id="batchesTitle">Batch list</h2>
+                            </div>
+                            <button class="add-batch-button" id="addBatchButton" type="button">Add batch</button>
+                        </div>
+
+                        <div class="batch-list" id="batchList">
+                            {% for batch_number in range(1, 2) %}
+                                <section class="batch-card" data-batch-tone="{{ ((batch_number - 1) % 15) + 1 }}" aria-labelledby="batch{{ batch_number }}Title">
+                                    <div class="batch-card-header">
+                                        <h3 id="batch{{ batch_number }}Title">Batch {{ batch_number }}</h3>
+                                        <div class="batch-card-actions">
+                                            <span class="batch-count">0 tables</span>
+                                            <button class="remove-batch-button" type="button" aria-label="Remove Batch {{ batch_number }}">Remove</button>
+                                        </div>
+                                    </div>
+                                    <div class="batch-drop-zone" data-drop-zone="batch" aria-label="Batch {{ batch_number }} drop zone">
+                                        <div class="batch-new-table-ghost">DRAG TO ADD NEW TABLE</div>
+                                    </div>
+                                </section>
                             {% endfor %}
-                        </ol>
-                    {% else %}
-                        <p class="empty-state">No tables were selected.</p>
-                    {% endif %}
+                        </div>
+
+                        <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Drop a new table here to create a new batch">
+                            <div class="batch-new-table-ghost new-batch-ghost">Drag new table here to make new batch</div>
+                        </div>
+
+                        <div class="batch-save-row">
+                            <button class="process-tables-button" id="processTablesButton" type="button">Process tables</button>
+                        </div>
+                    </div>
                 </section>
             </div>
         </section>
@@ -82,6 +162,19 @@
         const themeToggle = document.getElementById("themeToggle");
         const themeIcon = document.getElementById("themeIcon");
         const themeLabel = document.getElementById("themeLabel");
+        const tableSourceList = document.getElementById("tableSourceList");
+        const batchList = document.getElementById("batchList");
+        const aiRefreshButton = document.getElementById("aiRefreshButton");
+        const batchTimeoutInput = document.getElementById("batchTimeoutInput");
+        const maxParallelismInput = document.getElementById("maxParallelismInput");
+        const retryCountInput = document.getElementById("retryCountInput");
+        const commitModeInputs = Array.from(document.querySelectorAll("input[name='commitMode']"));
+        const addBatchButton = document.getElementById("addBatchButton");
+        const newBatchDropZone = document.getElementById("newBatchDropZone");
+        const processTablesButton = document.getElementById("processTablesButton");
+        const selectionPayload = {{ selection | tojson }};
+
+        let draggedTable = null;
 
         function setTheme(theme) {
             const isDark = theme === "dark";
@@ -96,6 +189,422 @@
             const currentTheme = document.documentElement.dataset.theme || "light";
             setTheme(currentTheme === "dark" ? "light" : "dark");
         });
+
+        function getTableItems() {
+            return Array.from(document.querySelectorAll(".table-drag-item"));
+        }
+
+        function getDropZones() {
+            return Array.from(document.querySelectorAll("[data-drop-zone]"));
+        }
+
+        function getBatchCards() {
+            return Array.from(document.querySelectorAll(".batch-card"));
+        }
+
+        function getBatchLabel(batchNumber) {
+            return `B${batchNumber}`;
+        }
+
+        function getBatchTitle(batchNumber) {
+            return `Batch ${batchNumber}`;
+        }
+
+        function getBatchTone(batchNumber) {
+            return String(((batchNumber - 1) % 15) + 1);
+        }
+
+        function updateBatchIdentities() {
+            getBatchCards().forEach((batchCard, index) => {
+                const batchNumber = index + 1;
+                const batchLabel = getBatchLabel(batchNumber);
+                const batchTitle = getBatchTitle(batchNumber);
+                const title = batchCard.querySelector("h3");
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
+                const removeButton = batchCard.querySelector(".remove-batch-button");
+                const titleId = `batch${batchNumber}Title`;
+
+                batchCard.dataset.batchTone = getBatchTone(batchNumber);
+                batchCard.dataset.batchLabel = batchLabel;
+                batchCard.setAttribute("aria-labelledby", titleId);
+                if (title) {
+                    title.id = titleId;
+                    title.textContent = batchTitle;
+                    title.title = batchTitle;
+                }
+                if (dropZone) {
+                    dropZone.setAttribute("aria-label", `${batchTitle} drop zone`);
+                }
+                if (removeButton) {
+                    removeButton.setAttribute("aria-label", `Remove ${batchTitle}`);
+                }
+                batchCard.querySelectorAll(".batch-table-item").forEach((tableItem) => {
+                    const tableName = getTableName(tableItem);
+                    const assignmentButton = tableItem.querySelector(".remove-table-assignment-button");
+
+                    tableItem.dataset.batchTone = getBatchTone(batchNumber);
+                    if (assignmentButton) {
+                        assignmentButton.setAttribute("aria-label", `Remove ${tableName} from ${batchTitle}`);
+                    }
+                });
+            });
+        }
+
+        function updateBatchCounts() {
+            const batchCards = getBatchCards();
+
+            updateBatchIdentities();
+
+            getBatchCards().forEach((batchCard) => {
+                const count = batchCard.querySelectorAll(".batch-table-item").length;
+                const countLabel = batchCard.querySelector(".batch-count");
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
+                const removeButton = batchCard.querySelector(".remove-batch-button");
+
+                countLabel.textContent = `${count} ${count === 1 ? "table" : "tables"}`;
+                if (dropZone) {
+                    dropZone.classList.toggle("is-empty", count === 0);
+                }
+                if (removeButton) {
+                    removeButton.disabled = batchCards.length === 1;
+                }
+            });
+            updateTableBatchLabels();
+        }
+
+        function getBatchName(batchCard) {
+            const title = batchCard ? batchCard.querySelector("h3") : null;
+            return title ? title.textContent.trim() : "Batch";
+        }
+
+        function getTableName(tableItem) {
+            return tableItem.dataset.tableName || tableItem.textContent.trim();
+        }
+
+        function getAssignedBatchNumbers(tableName) {
+            return getAssignedBatches(tableName).map(({batchNumber}) => batchNumber);
+        }
+
+        function getAssignedBatches(tableName) {
+            return getBatchCards()
+            .map((batchCard, index) => ({batchCard, batchNumber: index + 1}))
+            .filter(({batchCard}) => Array.from(batchCard.querySelectorAll(".batch-table-item")).some((item) => getTableName(item) === tableName))
+            .map(({batchNumber}) => ({
+                batchNumber,
+                batchLabel: getBatchLabel(batchNumber),
+                batchTone: getBatchTone(batchNumber),
+            }));
+        }
+
+        function updateTableBatchLabels() {
+            getTableItems().forEach((tableItem) => {
+                const label = tableItem.querySelector(".table-batch-label");
+                const assignedBatches = getAssignedBatches(getTableName(tableItem));
+
+                if (!label) {
+                    return;
+                }
+
+                label.replaceChildren();
+                label.classList.toggle("has-batches", assignedBatches.length > 0);
+                tableItem.classList.toggle("has-batches", assignedBatches.length > 0);
+                if (!assignedBatches.length) {
+                    const emptyLabel = document.createElement("span");
+                    emptyLabel.className = "table-batch-empty";
+                    emptyLabel.textContent = "No batches assigned";
+                    label.append(emptyLabel);
+                    return;
+                }
+
+                assignedBatches.forEach(({batchLabel, batchTone, batchNumber}) => {
+                    const chip = document.createElement("span");
+                    chip.className = "table-batch-chip";
+                    chip.dataset.batchTone = batchTone;
+                    chip.textContent = batchLabel;
+                    chip.title = `Batch ${batchNumber}`;
+                    label.append(chip);
+                });
+            });
+        }
+
+        function createBatchTableItem(tableName, batchCard) {
+            const item = document.createElement("article");
+            const name = document.createElement("span");
+            const removeButton = document.createElement("button");
+
+            item.className = "batch-table-item";
+            item.dataset.tableName = tableName;
+            name.textContent = tableName;
+            removeButton.className = "remove-table-assignment-button";
+            removeButton.type = "button";
+            removeButton.textContent = "Remove";
+            removeButton.setAttribute("aria-label", `Remove ${tableName} from ${getBatchName(batchCard)}`);
+            removeButton.addEventListener("click", () => {
+                item.remove();
+                updateBatchCounts();
+            });
+
+            item.append(name, removeButton);
+            return item;
+        }
+
+        function assignTableNameToBatch(tableName, dropZone, sourceTableItem = null) {
+            const batchCard = dropZone ? dropZone.closest(".batch-card") : null;
+
+            if (!tableName || !batchCard) {
+                return;
+            }
+
+            const hasAssignment = Array.from(dropZone.querySelectorAll(".batch-table-item")).some((item) => getTableName(item) === tableName);
+
+            if (hasAssignment) {
+                updateBatchCounts();
+                return;
+            }
+
+            const newTableGhost = dropZone.querySelector(".batch-new-table-ghost");
+            const assignment = createBatchTableItem(tableName, batchCard);
+
+            if (newTableGhost) {
+                dropZone.insertBefore(assignment, newTableGhost);
+            } else {
+                dropZone.append(assignment);
+            }
+            if (sourceTableItem) {
+                sourceTableItem.classList.remove("is-dragging");
+            }
+            updateBatchCounts();
+        }
+
+        function assignTableToBatch(tableItem, dropZone) {
+            assignTableNameToBatch(tableItem ? getTableName(tableItem) : "", dropZone, tableItem);
+        }
+
+        function addNewBatchWithTable(tableName, sourceTableItem = null) {
+            if (!tableName) {
+                return;
+            }
+
+            const batchNumber = getBatchCards().length + 1;
+            const batchCard = createBatchCard(batchNumber);
+            const dropZone = batchCard.querySelector(".batch-drop-zone");
+
+            batchList.append(batchCard);
+            assignTableNameToBatch(tableName, dropZone, sourceTableItem);
+            updateBatchCounts();
+        }
+
+        function renumberBatches() {
+            getBatchCards().forEach((batchCard, index) => {
+                const batchNumber = index + 1;
+                const title = batchCard.querySelector("h3");
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
+                const removeButton = batchCard.querySelector(".remove-batch-button");
+                const titleId = `batch${batchNumber}Title`;
+
+                batchCard.setAttribute("aria-labelledby", titleId);
+                title.id = titleId;
+                title.textContent = `Batch ${batchNumber}`;
+                dropZone.setAttribute("aria-label", `Batch ${batchNumber} drop zone`);
+                removeButton.setAttribute("aria-label", `Remove Batch ${batchNumber}`);
+                dropZone.querySelectorAll(".batch-table-item").forEach((tableItem) => {
+                    const tableName = getTableName(tableItem);
+                    const assignmentButton = tableItem.querySelector(".remove-table-assignment-button");
+
+                    assignmentButton.setAttribute("aria-label", `Remove ${tableName} from Batch ${batchNumber}`);
+                });
+            });
+        }
+
+        function removeBatch(batchCard) {
+            if (!batchCard || getBatchCards().length === 1) {
+                return;
+            }
+
+            batchCard.remove();
+            renumberBatches();
+            updateBatchCounts();
+        }
+
+        function registerDropZone(dropZone) {
+            dropZone.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                dropZone.classList.add("is-drag-over");
+            });
+
+            dropZone.addEventListener("dragleave", () => {
+                dropZone.classList.remove("is-drag-over");
+            });
+
+            dropZone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                dropZone.classList.remove("is-drag-over");
+                if (dropZone.dataset.dropZone === "new-batch") {
+                    const droppedTableName = event.dataTransfer.getData("text/plain") || (draggedTable ? getTableName(draggedTable) : "");
+                    addNewBatchWithTable(droppedTableName, draggedTable);
+                    return;
+                }
+
+                const droppedTableName = event.dataTransfer.getData("text/plain");
+                assignTableNameToBatch(droppedTableName || (draggedTable ? getTableName(draggedTable) : ""), dropZone, draggedTable);
+            });
+        }
+
+        function registerTableItem(tableItem) {
+            tableItem.addEventListener("dragstart", (event) => {
+                draggedTable = tableItem;
+                tableItem.classList.add("is-dragging");
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData("text/plain", tableItem.dataset.tableName || tableItem.textContent.trim());
+            });
+
+            tableItem.addEventListener("dragend", () => {
+                tableItem.classList.remove("is-dragging");
+                getDropZones().forEach((dropZone) => dropZone.classList.remove("is-drag-over"));
+                draggedTable = null;
+            });
+        }
+
+        function createBatchCard(batchNumber) {
+            const card = document.createElement("section");
+            const header = document.createElement("div");
+            const title = document.createElement("h3");
+            const actions = document.createElement("div");
+            const count = document.createElement("span");
+            const removeButton = document.createElement("button");
+            const dropZone = document.createElement("div");
+            const titleId = `batch${batchNumber}Title`;
+
+            card.className = "batch-card";
+            card.setAttribute("aria-labelledby", titleId);
+            header.className = "batch-card-header";
+            actions.className = "batch-card-actions";
+            title.id = titleId;
+            title.textContent = getBatchTitle(batchNumber);
+            count.className = "batch-count";
+            count.textContent = "0 tables";
+            removeButton.className = "remove-batch-button";
+            removeButton.type = "button";
+            removeButton.textContent = "Remove";
+            removeButton.setAttribute("aria-label", `Remove Batch ${batchNumber}`);
+            dropZone.className = "batch-drop-zone";
+            dropZone.dataset.dropZone = "batch";
+            dropZone.setAttribute("aria-label", `Batch ${batchNumber} drop zone`);
+            const newTableGhost = document.createElement("div");
+            newTableGhost.className = "batch-new-table-ghost";
+            newTableGhost.textContent = "DRAG TO ADD NEW TABLE";
+
+            removeButton.addEventListener("click", () => removeBatch(card));
+            actions.append(count, removeButton);
+            header.append(title, actions);
+            dropZone.append(newTableGhost);
+            card.append(header, dropZone);
+            registerDropZone(dropZone);
+            return card;
+        }
+
+        function distributeTablesAcrossBatches() {
+            const items = getTableItems();
+            const zones = Array.from(document.querySelectorAll(".batch-drop-zone"));
+
+            if (!items.length || !zones.length) {
+                return;
+            }
+
+            items.forEach((item, index) => {
+                assignTableToBatch(item, zones[index % zones.length]);
+            });
+            updateBatchCounts();
+        }
+
+        function getPositiveInteger(input, fallbackValue) {
+            const value = Number.parseInt(input.value, 10);
+
+            return Number.isFinite(value) && value > 0 ? value : fallbackValue;
+        }
+
+        function getNonNegativeInteger(input, fallbackValue) {
+            const value = Number.parseInt(input.value, 10);
+
+            return Number.isFinite(value) && value >= 0 ? value : fallbackValue;
+        }
+
+        function getBatchCreationSettings() {
+            const selectedCommitMode = commitModeInputs.find((input) => input.checked);
+
+            return {
+                timeoutMinutes: getPositiveInteger(batchTimeoutInput, 30),
+                maxParallelism: getPositiveInteger(maxParallelismInput, 4),
+                retryCount: getNonNegativeInteger(retryCountInput, 3),
+                commitMode: selectedCommitMode ? selectedCommitMode.value : "transactional",
+            };
+        }
+
+        function buildSavedBatchesPayload() {
+            const batches = getBatchCards().map((batchCard, index) => {
+                const title = batchCard.querySelector("h3");
+                const tables = Array.from(batchCard.querySelectorAll(".batch-table-item")).map(getTableName);
+
+                return {
+                    name: title ? title.textContent.trim() : `Batch ${index + 1}`,
+                    tables,
+                };
+            });
+
+            return {
+                savedAt: new Date().toISOString(),
+                workspaceName: selectionPayload.workspaceName || "Unavailable",
+                workspaceId: selectionPayload.workspaceId || "Unavailable",
+                modelName: selectionPayload.modelName || "Unavailable",
+                modelId: selectionPayload.modelId || "Unavailable",
+                selectedTables: selectionPayload.selectedTables || [],
+                batchCreationSettings: getBatchCreationSettings(),
+                unassignedTables: getTableItems()
+                    .filter((tableItem) => getAssignedBatchNumbers(getTableName(tableItem)).length === 0)
+                    .map(getTableName),
+                batches,
+                user: selectionPayload.user || {},
+            };
+        }
+
+        function openSavedBatchesPage(payload) {
+            const form = document.createElement("form");
+            const input = document.createElement("input");
+
+            form.method = "post";
+            form.action = "/saved-batches";
+            form.target = "_blank";
+            form.hidden = true;
+            input.type = "hidden";
+            input.name = "payload";
+            input.value = JSON.stringify(payload);
+            form.append(input);
+            document.body.append(form);
+            form.submit();
+            form.remove();
+        }
+
+        function processTables() {
+            const payload = buildSavedBatchesPayload();
+
+            localStorage.setItem("model-transformer-saved-batches", JSON.stringify(payload));
+            openSavedBatchesPage(payload);
+        }
+
+        getDropZones().forEach(registerDropZone);
+        getTableItems().forEach(registerTableItem);
+        document.querySelectorAll(".remove-batch-button").forEach((button) => {
+            button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
+        });
+        updateBatchCounts();
+
+        aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
+        addBatchButton.addEventListener("click", () => {
+            const batchNumber = getBatchCards().length + 1;
+            batchList.append(createBatchCard(batchNumber));
+            updateBatchCounts();
+        });
+        processTablesButton.addEventListener("click", processTables);
 
         setTheme(document.documentElement.dataset.theme || "light");
     </script>

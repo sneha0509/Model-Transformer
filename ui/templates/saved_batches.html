@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Saved batches - {{ saved.modelName }}</title>
+    <script>
+        const savedTheme = localStorage.getItem("portal-theme") || "light";
+        document.documentElement.dataset.theme = savedTheme;
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <main class="dashboard-shell">
+        <section class="app-shell selection-shell" aria-label="Saved batches">
+            <header class="app-header">
+                <div class="brand-block compact">
+                    <span class="brand-mark">MT</span>
+                    <div>
+                        <p class="eyebrow">Model Transformer</p>
+                        <h1>Saved batches</h1>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
+                        <span class="theme-label" id="themeLabel">Light</span>
+                    </button>
+                    <div class="user-menu" id="userMenu">
+                        <div>
+                            <small>Logged user</small>
+                            <strong>{{ saved.user.name }}</strong>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div class="selection-page saved-batches-page">
+                <section class="selection-header">
+                    <p class="eyebrow">JSON batch storage</p>
+                    <h2>{{ saved.modelName }}</h2>
+                </section>
+
+                <section class="selection-summary" aria-label="Saved batch details">
+                    <span>
+                        <strong>Workspace name</strong>
+                        <small>{{ saved.workspaceName }}</small>
+                    </span>
+                    <span>
+                        <strong>Model name</strong>
+                        <small>{{ saved.modelName }}</small>
+                    </span>
+                    <span>
+                        <strong>Batches</strong>
+                        <small>{{ saved.batchCount }}</small>
+                    </span>
+                    <span>
+                        <strong>Assigned tables</strong>
+                        <small>{{ saved.assignedTableCount }}</small>
+                    </span>
+                    <span>
+                        <strong>Timeout</strong>
+                        <small>{{ saved.batchCreationSettings.timeoutMinutes }} minutes</small>
+                    </span>
+                    <span>
+                        <strong>Commit mode</strong>
+                        <small>{{ saved.batchCreationSettings.commitMode.replace('-', ' ').title() }}</small>
+                    </span>
+                    <span>
+                        <strong>Max parallelism</strong>
+                        <small>{{ saved.batchCreationSettings.maxParallelism }}</small>
+                    </span>
+                    <span>
+                        <strong>Retry count</strong>
+                        <small>{{ saved.batchCreationSettings.retryCount }}</small>
+                    </span>
+                </section>
+
+                <section class="saved-json-panel" aria-labelledby="savedJsonTitle">
+                    <div class="batch-panel-heading">
+                        <div>
+                            <p class="eyebrow">Saved for later</p>
+                            <h2 id="savedJsonTitle">Batch JSON</h2>
+                        </div>
+                    </div>
+                    <pre class="saved-json-block"><code>{{ saved_json }}</code></pre>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const themeToggle = document.getElementById("themeToggle");
+        const themeIcon = document.getElementById("themeIcon");
+        const themeLabel = document.getElementById("themeLabel");
+
+        function setTheme(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem("portal-theme", theme);
+            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
+            themeLabel.textContent = isDark ? "Dark" : "Light";
+            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+        }
+
+        themeToggle.addEventListener("click", () => {
+            const currentTheme = document.documentElement.dataset.theme || "light";
+            setTheme(currentTheme === "dark" ? "light" : "dark");
+        });
+
+        setTheme(document.documentElement.dataset.theme || "light");
+    </script>
+</body>
+</html>

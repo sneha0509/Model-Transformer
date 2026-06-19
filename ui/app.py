@@ -469,6 +469,83 @@ def normalize_selected_tables_payload(payload):
     }
 
 
+def normalize_saved_batches_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    batches = payload.get("batches") if isinstance(payload.get("batches"), list) else []
+    batch_creation_settings = payload.get("batchCreationSettings") if isinstance(payload.get("batchCreationSettings"), dict) else {}
+
+    normalized_batches = []
+    for index, batch in enumerate(batches, start=1):
+        batch = batch if isinstance(batch, dict) else {}
+        tables = batch.get("tables") if isinstance(batch.get("tables"), list) else []
+        normalized_batches.append({
+            "name": str(batch.get("name") or f"Batch {index}"),
+            "tables": [str(table).strip() for table in tables if str(table).strip()],
+        })
+
+    if not normalized_batches:
+        normalized_batches.append({"name": "Batch 1", "tables": []})
+
+    selected_tables = payload.get("selectedTables") if isinstance(payload.get("selectedTables"), list) else []
+    unassigned_tables = payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else []
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    user_name = str(user.get("name") or "Azure CLI user")
+    timeout_minutes = batch_creation_settings.get("timeoutMinutes")
+    max_parallelism = batch_creation_settings.get("maxParallelism")
+    retry_count = batch_creation_settings.get("retryCount")
+    commit_mode = str(batch_creation_settings.get("commitMode") or "transactional")
+
+    try:
+        timeout_minutes = int(timeout_minutes)
+    except (TypeError, ValueError):
+        timeout_minutes = 30
+    try:
+        max_parallelism = int(max_parallelism)
+    except (TypeError, ValueError):
+        max_parallelism = 4
+    try:
+        retry_count = int(retry_count)
+    except (TypeError, ValueError):
+        retry_count = 3
+
+    if timeout_minutes < 1:
+        timeout_minutes = 30
+    if max_parallelism < 1:
+        max_parallelism = 4
+    if retry_count < 0:
+        retry_count = 3
+    if commit_mode not in {"transactional", "partial-batch"}:
+        commit_mode = "transactional"
+
+    saved = {
+        "savedAt": str(payload.get("savedAt") or "Unavailable"),
+        "workspaceName": str(payload.get("workspaceName") or "Unavailable"),
+        "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
+        "modelName": str(payload.get("modelName") or "Unavailable"),
+        "modelId": str(payload.get("modelId") or "Unavailable"),
+        "selectedTables": [str(table).strip() for table in selected_tables if str(table).strip()],
+        "unassignedTables": [str(table).strip() for table in unassigned_tables if str(table).strip()],
+        "batchCreationSettings": {
+            "timeoutMinutes": timeout_minutes,
+            "commitMode": commit_mode,
+            "maxParallelism": max_parallelism,
+            "retryCount": retry_count,
+        },
+        "batches": normalized_batches,
+        "user": {
+            "name": user_name,
+            "email": str(user.get("email") or ""),
+            "tenantId": str(user.get("tenantId") or ""),
+            "subscription": str(user.get("subscription") or ""),
+        },
+    }
+    saved["batchCount"] = len(saved["batches"])
+    saved["assignedTableCount"] = sum(len(batch["tables"]) for batch in saved["batches"])
+    saved["unassignedTableCount"] = len(saved["unassignedTables"])
+    saved["selectedTableCount"] = len(saved["selectedTables"])
+    return saved
+
+
 @model_transformer.post("/selected-tables")
 def selected_tables():
     payload = request.get_json(silent=True) if request.is_json else None
@@ -480,6 +557,20 @@ def selected_tables():
 
     selection = normalize_selected_tables_payload(payload)
     return render_template("selected_tables.html", selection=selection)
+
+
+@model_transformer.post("/saved-batches")
+def saved_batches():
+    payload = request.get_json(silent=True) if request.is_json else None
+    if payload is None:
+        try:
+            payload = json.loads(request.form.get("payload", "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+
+    saved = normalize_saved_batches_payload(payload)
+    saved_json = json.dumps(saved, indent=4)
+    return render_template("saved_batches.html", saved=saved, saved_json=saved_json)
 
 
 @model_transformer.post("/api/login")
