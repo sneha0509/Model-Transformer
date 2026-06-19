@@ -1,41 +1,18 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Selected tables - {{ selection.modelName }}</title>
-    <script>
-        const savedTheme = localStorage.getItem("portal-theme") || "light";
-        document.documentElement.dataset.theme = savedTheme;
-    </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <main class="dashboard-shell">
-        <section class="app-shell selection-shell" aria-label="Selected tables">
-            <header class="app-header">
-                <div class="brand-block compact">
-                    <span class="brand-mark">MT</span>
-                    <div>
-                        <p class="eyebrow">Model Transformer</p>
-                        <h1>Selected tables</h1>
-                    </div>
-                </div>
+{% extends "base.html" %}
 
-                <div class="header-actions">
-                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
-                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
-                        <span class="theme-label" id="themeLabel">Light</span>
-                    </button>
-                    <div class="user-menu" id="userMenu">
+{% block title %}Selected tables - {{ selection.modelName }}{% endblock %}
+{% block app_shell_class %}selection-shell{% endblock %}
+{% block app_aria_label %}Selected tables{% endblock %}
+{% block app_title %}Selected tables{% endblock %}
+
+{% block user_menu %}
                         <div>
                             <small>Logged user</small>
                             <strong>{{ selection.user.name }}</strong>
                         </div>
-                    </div>
-                </div>
-            </header>
+{% endblock %}
 
+{% block app_content %}
             <div class="selection-page">
                 <section class="selection-header selection-details-section" aria-label="Model details">
                     <div class="selection-model-identity">
@@ -155,13 +132,10 @@
                     </div>
                 </section>
             </div>
-        </section>
-    </main>
+{% endblock %}
 
+{% block scripts %}
     <script>
-        const themeToggle = document.getElementById("themeToggle");
-        const themeIcon = document.getElementById("themeIcon");
-        const themeLabel = document.getElementById("themeLabel");
         const tableSourceList = document.getElementById("tableSourceList");
         const batchList = document.getElementById("batchList");
         const aiRefreshButton = document.getElementById("aiRefreshButton");
@@ -175,20 +149,6 @@
         const selectionPayload = {{ selection | tojson }};
 
         let draggedTable = null;
-
-        function setTheme(theme) {
-            const isDark = theme === "dark";
-            document.documentElement.dataset.theme = theme;
-            localStorage.setItem("portal-theme", theme);
-            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
-            themeLabel.textContent = isDark ? "Dark" : "Light";
-            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
-        }
-
-        themeToggle.addEventListener("click", () => {
-            const currentTheme = document.documentElement.dataset.theme || "light";
-            setTheme(currentTheme === "dark" ? "light" : "dark");
-        });
 
         function getTableItems() {
             return Array.from(document.querySelectorAll(".table-drag-item"));
@@ -605,8 +565,5 @@
             updateBatchCounts();
         });
         processTablesButton.addEventListener("click", processTables);
-
-        setTheme(document.documentElement.dataset.theme || "light");
     </script>
-</body>
-</html>
+    {% endblock %}

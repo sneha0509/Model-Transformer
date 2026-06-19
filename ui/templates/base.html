@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Model Transformer Portal{% endblock %}</title>
+    <script>
+        const savedTheme = localStorage.getItem("portal-theme") || "light";
+        document.documentElement.dataset.theme = savedTheme;
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <main class="dashboard-shell">
+        {% block pre_app_content %}{% endblock %}
+
+        <section class="app-shell {% block app_shell_class %}{% endblock %}" {% block app_shell_attributes %}{% endblock %} aria-label="{% block app_aria_label %}Model Transformer{% endblock %}">
+            <header class="app-header">
+                <div class="brand-block compact">
+                    <span class="brand-mark">MT</span>
+                    <div>
+                        <p class="eyebrow">Model Transformer</p>
+                        <h1>{% block app_title %}Workspace Hub{% endblock %}</h1>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
+                        <span class="theme-label" id="themeLabel">Light</span>
+                    </button>
+                    <div class="user-menu" id="userMenu">
+                        {% block user_menu %}{% endblock %}
+                    </div>
+                </div>
+            </header>
+
+            {% block app_content %}{% endblock %}
+        </section>
+    </main>
+
+    <script>
+        const themeToggle = document.getElementById("themeToggle");
+        const themeIcon = document.getElementById("themeIcon");
+        const themeLabel = document.getElementById("themeLabel");
+
+        function setPortalTheme(theme) {
+            const isDark = theme === "dark";
+            document.documentElement.dataset.theme = theme;
+            localStorage.setItem("portal-theme", theme);
+
+            if (!themeToggle || !themeIcon || !themeLabel) {
+                return;
+            }
+
+            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
+            themeLabel.textContent = isDark ? "Dark" : "Light";
+            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+        }
+
+        if (themeToggle) {
+            themeToggle.addEventListener("click", () => {
+                const currentTheme = document.documentElement.dataset.theme || "light";
+                setPortalTheme(currentTheme === "dark" ? "light" : "dark");
+            });
+        }
+
+        setPortalTheme(document.documentElement.dataset.theme || "light");
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
