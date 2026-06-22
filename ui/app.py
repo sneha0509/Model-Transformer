@@ -1,11 +1,14 @@
 import json
 import os
+import re
+from datetime import datetime
+from pathlib import Path
 
 import requests
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import CredentialUnavailableError
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 try:
     from .base import build_user, get_azure_cli_account, get_fabric_access_token, get_power_bi_access_token
@@ -20,6 +23,8 @@ except ImportError:
 
 
 model_transformer = Flask(__name__, static_folder="templates/static")
+
+PRESETS_DIR = Path("presets")
 
 
 def get_request_payload():
@@ -42,8 +47,8 @@ def create_fabric_client():
 
 
 @model_transformer.route("/")
-def index():
-    return render_template("index.html")
+def home():
+    return render_template("home.html")
 
 
 @model_transformer.post("/selected-tables")
@@ -56,7 +61,61 @@ def selected_tables():
 def saved_batches():
     saved = normalize_saved_batches_payload(get_request_payload())
     saved_json = json.dumps(saved, indent=4)
-    return render_template("saved_batches.html", saved=saved, saved_json=saved_json)
+    return render_template("saved_batches.html", saved=saved, saved_json=saved_json, error=None)
+
+
+@model_transformer.get("/saved-batches/<preset_id>")
+def view_saved_batch(preset_id):
+    if not re.fullmatch(r"[\w.-]+", preset_id):
+        return render_template("saved_batches.html", saved=None, saved_json="", error="Invalid preset ID.")
+    preset_path = PRESETS_DIR / f"{preset_id}.json"
+    if not preset_path.exists():
+        return render_template("saved_batches.html", saved=None, saved_json="", error="Preset not found.")
+    try:
+        with open(preset_path, encoding="utf-8") as f:
+            saved = json.load(f)
+        saved_json = json.dumps(saved, indent=4)
+        return render_template("saved_batches.html", saved=saved, saved_json=saved_json, error=None)
+    except Exception as exc:
+        return render_template("saved_batches.html", saved=None, saved_json="", error=str(exc))
+
+
+@model_transformer.get("/api/presets")
+def list_presets():
+    presets = []
+    if PRESETS_DIR.exists():
+        files = sorted(PRESETS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+        for f in files:
+            try:
+                with open(f, encoding="utf-8") as file:
+                    data = json.load(file)
+                presets.append({
+                    "id": f.stem,
+                    "modelName": data.get("modelName", "Unnamed model"),
+                    "workspaceName": data.get("workspaceName", "Unavailable"),
+                    "savedAt": data.get("savedAt", ""),
+                    "batchCount": data.get("batchCount", 0),
+                    "assignedTableCount": data.get("assignedTableCount", 0),
+                })
+            except Exception:
+                pass
+    return jsonify(presets)
+
+
+@model_transformer.post("/api/presets")
+def save_preset():
+    payload = get_request_payload()
+    saved = normalize_saved_batches_payload(payload)
+    model_name = re.sub(r"[^\w]+", "_", saved.get("modelName") or "preset").strip("_") or "preset"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    preset_id = f"{model_name}_{timestamp}"
+    try:
+        PRESETS_DIR.mkdir(exist_ok=True)
+        with open(PRESETS_DIR / f"{preset_id}.json", "w", encoding="utf-8") as f:
+            json.dump(saved, f, indent=4)
+    except OSError as exc:
+        return jsonify({"message": f"Could not save preset: {exc}"}), 500
+    return jsonify({"presetId": preset_id})
 
 
 @model_transformer.post("/api/login")

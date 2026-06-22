@@ -1,0 +1,927 @@
+{% extends "base.html" %}
+
+{% block title %}Model Transformer Portal{% endblock %}
+{% block app_shell_attributes %}id="appShell"{% endblock %}
+{% block app_aria_label %}Model Transformer home{% endblock %}
+{% block app_title %}Preset Library{% endblock %}
+
+{% block user_menu %}
+    <div id="headerUserArea">
+        <button class="header-sign-in-button" id="headerSignInButton" type="button">Sign In</button>
+    </div>
+    <button class="header-sign-out-button" id="headerSignOutButton" type="button" hidden>Sign Out</button>
+{% endblock %}
+
+{% block app_content %}
+    <!-- Sign-in prompt (shown when not authenticated) -->
+    <div class="sign-in-prompt" id="signInPrompt">
+        <div class="sign-in-prompt-content">
+            <div class="sign-in-prompt-icon">🔐</div>
+            <h2>Sign In Required</h2>
+            <p>Sign in with your Azure CLI account to access and manage your batch presets.</p>
+            <button class="primary-button sign-in-prompt-button" id="signInPromptButton" type="button">
+                <span id="signInPromptButtonText">Sign in with Azure CLI</span>
+            </button>
+            <p class="form-error" id="signInPromptError" role="alert"></p>
+        </div>
+    </div>
+
+    <!-- Home: Preset List (shown when authenticated) -->
+    <div class="home-page" id="homePage" hidden>
+        <div class="home-page-header">
+            <div>
+                <p class="eyebrow">Refresh batch configurations</p>
+                <h2>Saved Presets</h2>
+            </div>
+            <button class="add-preset-button" id="addPresetButton" type="button">+ Add New Preset</button>
+        </div>
+
+        <p class="form-error" id="presetLoadError" role="alert"></p>
+        <p class="loading-state" id="presetLoading">Loading presets…</p>
+        <p class="empty-state" id="presetEmptyState" hidden>No presets saved yet. Click "+ Add New Preset" to create one.</p>
+        <div class="preset-grid" id="presetGrid"></div>
+    </div>
+
+    <!-- Model selector dialog -->
+    <dialog class="model-selector-dialog" id="modelSelectorDialog" aria-label="Select semantic model">
+        <div class="dialog-inner">
+            <div class="dialog-head">
+                <div>
+                    <p class="eyebrow">New preset</p>
+                    <h2>Select a semantic model</h2>
+                </div>
+                <button class="close-dialog-btn" id="closeDialogBtn" type="button" aria-label="Close dialog">&#x2715;</button>
+            </div>
+
+            <!-- Auth prompt -->
+            <div class="dialog-auth-prompt" id="dialogAuthPrompt">
+                <p class="login-hint">Sign in with the Azure CLI account on this machine to browse Power BI workspaces.</p>
+                <p class="form-error" id="dialogLoginError" role="alert"></p>
+                <button class="primary-button dialog-sign-in-btn" id="dialogSignInBtn" type="button">
+                    <span id="dialogSignInBtnText">Sign in with Azure CLI</span>
+                </button>
+            </div>
+
+            <!-- Workspace / asset / detail selector (shown after sign-in) -->
+            <div class="dialog-selector-layout" id="dialogSelectorLayout" hidden>
+                <section class="workspace-panel dialog-panel" aria-labelledby="dlgWorkspaceTitle">
+                    <div class="section-heading inline-heading">
+                        <div>
+                            <h2 id="dlgWorkspaceTitle">Workspaces</h2>
+                        </div>
+                        <span class="workspace-count" id="dlgWorkspaceCount"></span>
+                    </div>
+                    <label class="search-field" for="dlgWorkspaceSearch">
+                        <input id="dlgWorkspaceSearch" type="search" placeholder="Search workspace name" aria-label="Search workspace name">
+                    </label>
+                    <p class="empty-state" id="dlgWorkspaceEmpty" hidden>No workspaces were returned for this Azure CLI account.</p>
+                    <div class="workspace-list single-column" id="dlgWorkspaceList"></div>
+                </section>
+
+                <section class="assets-panel dialog-panel" aria-labelledby="dlgAssetsTitle">
+                    <div class="section-heading inline-heading">
+                        <div>
+                            <p class="eyebrow" id="dlgSelectedWorkspaceLabel">Selected workspace</p>
+                            <h2 id="dlgAssetsTitle">Models and reports</h2>
+                        </div>
+                        <span class="asset-count" id="dlgAssetCount"></span>
+                    </div>
+                    <label class="search-field" for="dlgAssetSearch">
+                        <input id="dlgAssetSearch" type="search" placeholder="Search by name, type, or owner" disabled>
+                    </label>
+                    <div class="asset-kind-switch" id="dlgAssetKindSwitch" aria-label="Filter models and reports">
+                        <button type="button" data-kind="all" data-active="true">All</button>
+                        <button type="button" data-kind="Model">Models</button>
+                        <button type="button" data-kind="Report">Reports</button>
+                    </div>
+                    <p class="form-error asset-error" id="dlgAssetError" role="alert"></p>
+                    <p class="empty-state" id="dlgAssetEmpty">No workspace selected.</p>
+                    <p class="loading-state" id="dlgAssetLoading" hidden>Loading assets…</p>
+                    <div class="asset-list combined-asset-list" id="dlgAssetList" hidden></div>
+                </section>
+
+                <aside class="detail-panel dialog-panel" aria-label="Asset details">
+                    <p class="empty-state" id="dlgDetailEmpty">Select a model or report.</p>
+                    <article class="detail-card compact-detail" id="dlgDetailContent" hidden>
+                        <div class="detail-header">
+                            <div>
+                                <p class="eyebrow" id="dlgDetailBadge"></p>
+                                <h2 id="dlgDetailName"></h2>
+                            </div>
+                            <a class="detail-link" id="dlgDetailLink" href="#" target="_blank" rel="noreferrer" hidden>Open in Power BI</a>
+                        </div>
+                        <details class="detail-metrics-bar" id="dlgDetailMetricsBar">
+                            <summary>
+                                <span>Metrics</span>
+                                <small id="dlgDetailMetricsCount"></small>
+                            </summary>
+                            <div class="detail-meta detail-table" id="dlgDetailTable"></div>
+                        </details>
+                        <div class="detail-tables" id="dlgDetailTables"></div>
+                    </article>
+                </aside>
+            </div>
+        </div>
+    </dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ── DOM refs ─────────────────────────────────────────────────────────────
+    const signInPrompt         = document.getElementById("signInPrompt");
+    const signInPromptButton   = document.getElementById("signInPromptButton");
+    const signInPromptError    = document.getElementById("signInPromptError");
+    const signInPromptButtonText = document.getElementById("signInPromptButtonText");
+    const homePage             = document.getElementById("homePage");
+    const headerUserArea       = document.getElementById("headerUserArea");
+    const headerSignInButton   = document.getElementById("headerSignInButton");
+    const headerSignOutButton  = document.getElementById("headerSignOutButton");
+    const addPresetButton      = document.getElementById("addPresetButton");
+    const presetLoading        = document.getElementById("presetLoading");
+    const presetEmptyState     = document.getElementById("presetEmptyState");
+    const presetLoadError      = document.getElementById("presetLoadError");
+    const presetGrid           = document.getElementById("presetGrid");
+
+    const modelSelectorDialog  = document.getElementById("modelSelectorDialog");
+    const closeDialogBtn       = document.getElementById("closeDialogBtn");
+    const dialogAuthPrompt     = document.getElementById("dialogAuthPrompt");
+    const dialogLoginError     = document.getElementById("dialogLoginError");
+    const dialogSignInBtn      = document.getElementById("dialogSignInBtn");
+    const dialogSignInBtnText  = document.getElementById("dialogSignInBtnText");
+    const dialogSelectorLayout = document.getElementById("dialogSelectorLayout");
+
+    const dlgWorkspaceSearch        = document.getElementById("dlgWorkspaceSearch");
+    const dlgWorkspaceList          = document.getElementById("dlgWorkspaceList");
+    const dlgWorkspaceCount         = document.getElementById("dlgWorkspaceCount");
+    const dlgWorkspaceEmpty         = document.getElementById("dlgWorkspaceEmpty");
+    const dlgSelectedWorkspaceLabel = document.getElementById("dlgSelectedWorkspaceLabel");
+    const dlgAssetSearch            = document.getElementById("dlgAssetSearch");
+    const dlgAssetKindSwitch        = document.getElementById("dlgAssetKindSwitch");
+    const dlgAssetCount             = document.getElementById("dlgAssetCount");
+    const dlgAssetError             = document.getElementById("dlgAssetError");
+    const dlgAssetEmpty             = document.getElementById("dlgAssetEmpty");
+    const dlgAssetLoading           = document.getElementById("dlgAssetLoading");
+    const dlgAssetList              = document.getElementById("dlgAssetList");
+    const dlgDetailEmpty            = document.getElementById("dlgDetailEmpty");
+    const dlgDetailContent          = document.getElementById("dlgDetailContent");
+    const dlgDetailBadge            = document.getElementById("dlgDetailBadge");
+    const dlgDetailName             = document.getElementById("dlgDetailName");
+    const dlgDetailMetricsBar       = document.getElementById("dlgDetailMetricsBar");
+    const dlgDetailMetricsCount     = document.getElementById("dlgDetailMetricsCount");
+    const dlgDetailTable            = document.getElementById("dlgDetailTable");
+    const dlgDetailTables           = document.getElementById("dlgDetailTables");
+    const dlgDetailLink             = document.getElementById("dlgDetailLink");
+
+    // ── App state ─────────────────────────────────────────────────────────────
+    const appState = {
+        isSignedIn: false,
+        user: {},
+        workspaces: [],
+        activeWorkspaceId: null,
+        activeAssetKey: null,
+        activeAssetKind: "all",
+        assetCache: new Map(),
+        detailCache: new Map(),
+    };
+
+    // ── Session management ──────────────────────────────────────────────────
+    const SESSION_KEY = "model-transformer-session";
+
+    function saveSession(user) {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    }
+
+    function getSession() {
+        try {
+            const stored = localStorage.getItem(SESSION_KEY);
+            return stored ? JSON.parse(stored) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function clearSession() {
+        localStorage.removeItem(SESSION_KEY);
+    }
+
+    function restoreSessionIfAvailable() {
+        const session = getSession();
+        if (session && session.name) {
+            appState.isSignedIn = true;
+            appState.user = session;
+            return true;
+        }
+        return false;
+    }
+
+    function updateUIForAuthState() {
+        if (appState.isSignedIn) {
+            signInPrompt.hidden = true;
+            homePage.hidden = false;
+            headerSignInButton.hidden = true;
+            headerSignOutButton.hidden = false;
+            renderHeaderUser(appState.user);
+            loadPresets();
+        } else {
+            signInPrompt.hidden = false;
+            homePage.hidden = true;
+            headerSignInButton.hidden = false;
+            headerSignOutButton.hidden = true;
+            headerUserArea.replaceChildren();
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function normalizeSearchValue(value) {
+        return String(value || "").toLowerCase();
+    }
+
+    function matchesSearch(item, query, fields) {
+        const q = normalizeSearchValue(query).trim();
+        if (!q) return true;
+        return fields.some((f) => normalizeSearchValue(item[f]).includes(q));
+    }
+
+    function assetKey(asset) {
+        return `${asset.category || asset.type}:${asset.id || asset.name}`;
+    }
+
+    function detailCacheKey(asset) {
+        return `${appState.activeWorkspaceId}:${assetKey(asset)}`;
+    }
+
+    function findActiveWorkspace() {
+        return appState.workspaces.find((w) => w.id === appState.activeWorkspaceId);
+    }
+
+    function formatWorkspaceName(name) {
+        const value = String(name || "Unnamed workspace").trim();
+        const display = value
+            .replace(/^workspace\s*[:|-]\s*/i, "")
+            .replace(/\s*[:|-]\s*workspace$/i, "")
+            .replace(/\s+\(workspace\)$/i, "")
+            .replace(/\s+workspace$/i, "")
+            .trim();
+        return display || value;
+    }
+
+    function getActiveAssets() {
+        return appState.assetCache.get(appState.activeWorkspaceId) || { models: [], reports: [] };
+    }
+
+    function getCombinedAssets(assets) {
+        return [
+            ...(assets.models || []).map((a) => ({ ...a, category: a.category || "Model" })),
+            ...(assets.reports || []).map((a) => ({ ...a, category: a.category || "Report" })),
+        ];
+    }
+
+    // ── Preset list ───────────────────────────────────────────────────────────
+    async function loadPresets() {
+        presetLoading.hidden = false;
+        presetEmptyState.hidden = true;
+        presetLoadError.textContent = "";
+        presetGrid.replaceChildren();
+
+        try {
+            const response = await fetch("/api/presets", { headers: { "Accept": "application/json" } });
+            const presets = await response.json();
+            presetLoading.hidden = true;
+
+            if (!response.ok) {
+                throw new Error(presets.message || "Could not load presets.");
+            }
+
+            renderPresets(presets || []);
+        } catch (error) {
+            presetLoading.hidden = true;
+            presetLoadError.textContent = error.message;
+        }
+    }
+
+    function formatSavedAt(isoString) {
+        if (!isoString) return "";
+        try {
+            return new Date(isoString).toLocaleString();
+        } catch {
+            return isoString;
+        }
+    }
+
+    function renderPresets(presets) {
+        presetGrid.replaceChildren();
+
+        if (!presets.length) {
+            presetEmptyState.hidden = false;
+            return;
+        }
+
+        presetEmptyState.hidden = true;
+        presets.forEach((preset) => {
+            const card = document.createElement("button");
+            card.type = "button";
+            card.className = "preset-card";
+            card.setAttribute("aria-label", `View preset: ${preset.modelName}`);
+
+            const ws = document.createElement("p");
+            ws.className = "eyebrow preset-card-workspace";
+            ws.textContent = preset.workspaceName || "Unavailable workspace";
+
+            const name = document.createElement("strong");
+            name.className = "preset-card-name";
+            name.textContent = preset.modelName || "Unnamed model";
+
+            const meta = document.createElement("p");
+            meta.className = "preset-card-meta";
+            const batches = `${preset.batchCount || 0} batch${preset.batchCount === 1 ? "" : "es"}`;
+            const tables  = `${preset.assignedTableCount || 0} table${preset.assignedTableCount === 1 ? "" : "s"}`;
+            const saved   = formatSavedAt(preset.savedAt);
+            meta.textContent = [batches, tables, saved].filter(Boolean).join(" · ");
+
+            card.append(ws, name, meta);
+            card.addEventListener("click", () => {
+                window.location.href = `/saved-batches/${preset.id}`;
+            });
+
+            presetGrid.append(card);
+        });
+    }
+
+    // ── Sign-in ───────────────────────────────────────────────────────────────
+    async function doSignIn(onSuccess) {
+        dialogLoginError.textContent = "";
+        dialogSignInBtn.disabled = true;
+        dialogSignInBtnText.textContent = "Signing in…";
+
+        try {
+            const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Azure CLI sign-in failed.");
+            }
+
+            appState.isSignedIn = true;
+            appState.user = data.user || {};
+            appState.workspaces = data.workspaces || [];
+            saveSession(appState.user);
+            renderHeaderUser(data.user || {});
+            if (onSuccess) onSuccess(data);
+        } catch (error) {
+            dialogLoginError.textContent = error.message;
+        } finally {
+            dialogSignInBtn.disabled = false;
+            dialogSignInBtnText.textContent = "Sign in with Azure CLI";
+        }
+    }
+
+    async function headerSignIn() {
+        headerSignInButton.disabled = true;
+        headerSignInButton.textContent = "Signing in…";
+
+        try {
+            const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Azure CLI sign-in failed.");
+            }
+
+            appState.isSignedIn = true;
+            appState.user = data.user || {};
+            appState.workspaces = data.workspaces || [];
+            saveSession(appState.user);
+            updateUIForAuthState();
+        } catch (error) {
+            headerSignInButton.disabled = false;
+            headerSignInButton.textContent = "Sign In";
+            alert(`Sign-in failed: ${error.message}`);
+        }
+    }
+
+    function headerSignOut() {
+        appState.isSignedIn = false;
+        appState.user = {};
+        appState.workspaces = [];
+        clearSession();
+        updateUIForAuthState();
+        closeDialog();
+    }
+
+    function renderHeaderUser(user) {
+        headerUserArea.replaceChildren();
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "header-user-info";
+
+        const text = document.createElement("div");
+        const label = document.createElement("small");
+        const name = document.createElement("strong");
+        label.textContent = "Signed in";
+        name.textContent = user.name || user.email || "Azure CLI user";
+        text.append(label, name);
+
+        wrapper.append(text);
+        headerUserArea.append(wrapper);
+    }
+
+    // ── Dialog open / close ───────────────────────────────────────────────────
+    function openModelSelector() {
+        modelSelectorDialog.showModal();
+
+        if (appState.isSignedIn) {
+            showSelectorLayout();
+        } else {
+            dialogAuthPrompt.hidden = false;
+            dialogSelectorLayout.hidden = true;
+        }
+    }
+
+    function closeDialog() {
+        modelSelectorDialog.close();
+    }
+
+    async function showSelectorLayout() {
+        dialogAuthPrompt.hidden = true;
+        dialogSelectorLayout.hidden = false;
+
+        if (appState.workspaces.length === 0) {
+            // Workspaces not yet loaded (e.g. session restored from localStorage).
+            // Fetch them now via the login endpoint.
+            dlgWorkspaceList.replaceChildren();
+            dlgWorkspaceCount.textContent = "Loading…";
+            dlgWorkspaceEmpty.hidden = true;
+
+            try {
+                const response = await fetch("/api/login", {
+                    method: "POST",
+                    headers: { "Accept": "application/json" },
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Failed to load workspaces.");
+                }
+
+                appState.workspaces = data.workspaces || [];
+            } catch (error) {
+                dlgWorkspaceCount.textContent = "";
+                dlgWorkspaceEmpty.textContent = error.message;
+                dlgWorkspaceEmpty.hidden = false;
+                return;
+            }
+        }
+
+        renderDlgWorkspaces();
+    }
+
+    // ── Dialog workspace / asset rendering ───────────────────────────────────
+    function renderDlgAssetKindSwitch() {
+        dlgAssetKindSwitch.querySelectorAll("button").forEach((btn) => {
+            btn.dataset.active = String(btn.dataset.kind === appState.activeAssetKind);
+        });
+    }
+
+    function renderDlgWorkspaces() {
+        dlgWorkspaceList.replaceChildren();
+        const query = dlgWorkspaceSearch.value;
+        const filtered = appState.workspaces.filter((ws) => matchesSearch(ws, query, ["name"]));
+
+        dlgWorkspaceCount.textContent = query.trim()
+            ? `${filtered.length} / ${appState.workspaces.length}`
+            : `${appState.workspaces.length} ${appState.workspaces.length === 1 ? "workspace" : "workspaces"}`;
+
+        dlgWorkspaceEmpty.hidden = filtered.length > 0;
+        dlgWorkspaceEmpty.textContent = appState.workspaces.length
+            ? "No workspaces match your search."
+            : "No workspaces were returned for this Azure CLI account.";
+
+        filtered.forEach((ws) => {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "workspace-item";
+            item.dataset.active = String(ws.id === appState.activeWorkspaceId);
+
+            const nameEl = document.createElement("strong");
+            nameEl.textContent = formatWorkspaceName(ws.name);
+            item.append(nameEl);
+            item.addEventListener("click", () => loadDlgWorkspaceAssets(ws));
+            dlgWorkspaceList.append(item);
+        });
+    }
+
+    function renderDlgAssetItem(asset) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "asset-item";
+        item.dataset.active = String(assetKey(asset) === appState.activeAssetKey);
+
+        const type  = document.createElement("span");
+        const name  = document.createElement("strong");
+        const owner = document.createElement("small");
+
+        type.className = "asset-type";
+        type.textContent  = asset.category || asset.type || "Asset";
+        name.textContent  = asset.name || "Unnamed asset";
+        owner.textContent = asset.owner || "Owner unavailable";
+        item.append(type, name, owner);
+        item.addEventListener("click", () => selectDlgAsset(asset));
+        return item;
+    }
+
+    function renderDlgAssets(assets) {
+        const combined = getCombinedAssets(assets);
+        const kindFiltered = appState.activeAssetKind === "all"
+            ? combined
+            : combined.filter((a) => a.category === appState.activeAssetKind);
+        const query    = dlgAssetSearch.value;
+        const filtered = kindFiltered.filter((a) =>
+            matchesSearch(a, query, ["name", "category", "type", "owner", "status", "datasetId"])
+        );
+
+        dlgAssetList.replaceChildren();
+        dlgAssetSearch.disabled = !appState.activeWorkspaceId;
+        renderDlgAssetKindSwitch();
+
+        dlgAssetCount.textContent = query.trim()
+            ? `${filtered.length} / ${kindFiltered.length}`
+            : `${kindFiltered.length} ${kindFiltered.length === 1 ? "item" : "items"}`;
+
+        dlgAssetEmpty.hidden = filtered.length > 0;
+        dlgAssetEmpty.textContent = kindFiltered.length
+            ? "No items match your search."
+            : appState.activeAssetKind === "all"
+                ? "No models or reports were returned for this workspace."
+                : `No ${appState.activeAssetKind.toLowerCase()}s were returned for this workspace.`;
+        dlgAssetList.hidden = filtered.length === 0;
+
+        filtered.forEach((a) => dlgAssetList.append(renderDlgAssetItem(a)));
+    }
+
+    function setDlgAssetKind(kind) {
+        appState.activeAssetKind = kind;
+        appState.activeAssetKey  = null;
+        clearDlgDetail("Select a model or report.");
+        renderDlgAssets(getActiveAssets());
+    }
+
+    // ── Dialog detail ─────────────────────────────────────────────────────────
+    function clearDlgDetail(message) {
+        dlgDetailEmpty.textContent = message || "Select a model or report.";
+        dlgDetailEmpty.hidden      = false;
+        dlgDetailContent.hidden    = true;
+        dlgDetailTable.replaceChildren();
+        dlgDetailTables.replaceChildren();
+        dlgDetailMetricsBar.open   = false;
+        dlgDetailMetricsCount.textContent = "";
+        dlgDetailLink.hidden       = true;
+    }
+
+    function formatDetailValue(value) {
+        if (value === true)  return "Yes";
+        if (value === false) return "No";
+        return value || "Unavailable";
+    }
+
+    function formatListValue(values) {
+        return Array.isArray(values) && values.length ? values.join(", ") : "Unavailable";
+    }
+
+    function formatSchedule(schedule) {
+        if (!schedule || !schedule.enabled) return "No";
+        const times    = formatListValue(schedule.times);
+        const days     = formatListValue(schedule.days);
+        const timeZone = schedule.timeZone || "Unavailable";
+        return `Yes - ${days} at ${times} (${timeZone})`;
+    }
+
+    function addDetailRow(target, label, value) {
+        const row   = document.createElement("span");
+        const lbl   = document.createElement("strong");
+        const val   = document.createElement("small");
+        lbl.textContent = label;
+        val.textContent = formatDetailValue(value);
+        row.append(lbl, val);
+        target.append(row);
+    }
+
+    function getAssetOpenUrl(asset) {
+        return asset.category === "Model"
+            ? asset.semanticModelUrl || asset.webUrl || ""
+            : asset.webUrl || "";
+    }
+
+    function openSelectedTablesPage(selectedTables, asset) {
+        const workspace = findActiveWorkspace() || {};
+        const form  = document.createElement("form");
+        const input = document.createElement("input");
+        const payload = {
+            workspaceName: formatWorkspaceName(workspace.name),
+            workspaceId:   workspace.id || appState.activeWorkspaceId || "",
+            modelName:     asset.name || "Unnamed model",
+            modelId:       asset.id || "",
+            selectedTables,
+            user: appState.user || {},
+        };
+
+        form.method = "post";
+        form.action = "/selected-tables";
+        form.hidden = true;
+        input.type  = "hidden";
+        input.name  = "payload";
+        input.value = JSON.stringify(payload);
+        form.append(input);
+        document.body.append(form);
+        form.submit();
+        form.remove();
+        closeDialog();
+    }
+
+    function renderDlgTableValues(tables, asset) {
+        dlgDetailTables.replaceChildren();
+
+        const section   = document.createElement("section");
+        const header    = document.createElement("div");
+        const heading   = document.createElement("h3");
+        const allLabel  = document.createElement("label");
+        const allCheck  = document.createElement("input");
+        const allText   = document.createElement("span");
+
+        section.className  = "table-values-panel";
+        header.className   = "table-values-header";
+        heading.textContent = "Tables";
+        allLabel.className  = "table-value-option";
+        allCheck.type = "checkbox";
+        allText.textContent = "Select All";
+
+        allLabel.append(allCheck, allText);
+        header.append(heading, allLabel);
+        section.append(header);
+
+        if (!Array.isArray(tables) || !tables.length) {
+            const empty = document.createElement("p");
+            empty.className = "mini-empty-state";
+            empty.textContent = "No tables available.";
+            section.append(empty);
+            dlgDetailTables.append(section);
+            return;
+        }
+
+        const list            = document.createElement("div");
+        const selectionButton = document.createElement("button");
+        const rowCheckboxes   = [];
+
+        list.className = "table-value-list";
+        selectionButton.className = "selected-tables-button";
+        selectionButton.type      = "button";
+        selectionButton.textContent = "Continue to Batch Creation";
+        selectionButton.disabled    = true;
+
+        function getSelectedTables() {
+            return rowCheckboxes
+                .filter((cb) => cb.checked)
+                .map((cb) => cb.dataset.tableName);
+        }
+
+        function syncAllCheckbox() {
+            const checkedCount = rowCheckboxes.filter((cb) => cb.checked).length;
+            allCheck.checked       = checkedCount === rowCheckboxes.length;
+            allCheck.indeterminate = checkedCount > 0 && checkedCount < rowCheckboxes.length;
+            selectionButton.disabled = checkedCount === 0;
+        }
+
+        tables.forEach((table) => {
+            const row        = document.createElement("article");
+            const cbLabel    = document.createElement("label");
+            const checkbox   = document.createElement("input");
+            const tableName  = document.createElement("span");
+            const displayName = table.name || "Unnamed table";
+
+            row.className     = "table-value-row";
+            cbLabel.className = "table-value-option";
+            checkbox.type     = "checkbox";
+            checkbox.dataset.tableName = displayName;
+            tableName.textContent      = displayName;
+
+            checkbox.addEventListener("change", syncAllCheckbox);
+            rowCheckboxes.push(checkbox);
+            cbLabel.append(checkbox, tableName);
+            row.append(cbLabel);
+            list.append(row);
+        });
+
+        allCheck.addEventListener("change", () => {
+            rowCheckboxes.forEach((cb) => {
+                cb.checked = allCheck.checked;
+                cb.dispatchEvent(new Event("change"));
+            });
+            allCheck.indeterminate = false;
+        });
+
+        selectionButton.addEventListener("click", () => {
+            const selected = getSelectedTables();
+            if (selected.length) {
+                openSelectedTablesPage(selected, asset);
+            }
+        });
+
+        section.append(list, selectionButton);
+        dlgDetailTables.append(section);
+    }
+
+    function renderDlgDetail(asset) {
+        const lastRefresh      = asset.lastRefresh || {};
+        const refreshSchedule  = asset.refreshSchedule || {};
+        const metricRows = [
+            ["ID",                   asset.id],
+            ["Item type",            asset.itemKind || asset.category],
+            ["Connection mode",      asset.connectionMode],
+            ["Owner",                asset.owner || asset.configuredBy],
+            ["Last refresh status",  lastRefresh.status],
+            ["Last refresh time",    lastRefresh.time],
+            ["Last refresh type",    lastRefresh.type],
+            ["Scheduled refresh",    formatSchedule(refreshSchedule)],
+            ["Table count",          asset.tableCount],
+            ["Has partitions",       asset.hasPartitions],
+            ["Partition count",      asset.partitionCount],
+        ];
+
+        if (asset.category !== "Model") {
+            metricRows.push(
+                ["Dataset ID",             asset.datasetId],
+                ["Semantic model mode",    asset.semanticModelConnectionMode],
+                ["Embed URL",              asset.embedUrl],
+                ["Web URL",                asset.webUrl]
+            );
+        }
+
+        dlgDetailBadge.textContent = asset.category || "Asset";
+        dlgDetailName.textContent  = asset.name || "Unnamed asset";
+        dlgDetailTable.replaceChildren();
+        dlgDetailTables.replaceChildren();
+        dlgDetailMetricsBar.open = false;
+        dlgDetailMetricsCount.textContent = `${metricRows.length} fields`;
+        metricRows.forEach(([label, value]) => addDetailRow(dlgDetailTable, label, value));
+        renderDlgTableValues(asset.tables, asset);
+
+        const openUrl = getAssetOpenUrl(asset);
+        if (openUrl) {
+            dlgDetailLink.href   = openUrl;
+            dlgDetailLink.textContent = asset.category === "Model" ? "Open semantic model" : "Open report";
+            dlgDetailLink.hidden = false;
+        } else {
+            dlgDetailLink.hidden = true;
+        }
+
+        dlgDetailEmpty.hidden   = true;
+        dlgDetailContent.hidden = false;
+    }
+
+    async function loadDlgAssetDetails(asset) {
+        const cacheKey = detailCacheKey(asset);
+        if (appState.detailCache.has(cacheKey)) {
+            renderDlgDetail(appState.detailCache.get(cacheKey));
+            return;
+        }
+
+        clearDlgDetail("Loading metadata…");
+
+        try {
+            const response = await fetch(
+                `/api/workspaces/${encodeURIComponent(appState.activeWorkspaceId)}/assets/${encodeURIComponent(asset.category)}/${encodeURIComponent(asset.id)}/details`,
+                { headers: { "Accept": "application/json" } }
+            );
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Could not load item metadata.");
+            }
+
+            appState.detailCache.set(cacheKey, data);
+            renderDlgDetail(data);
+        } catch (error) {
+            clearDlgDetail(error.message);
+        }
+    }
+
+    function selectDlgAsset(asset) {
+        appState.activeAssetKey = assetKey(asset);
+        renderDlgAssets(getActiveAssets());
+        loadDlgAssetDetails(asset);
+    }
+
+    async function loadDlgWorkspaceAssets(workspace) {
+        appState.activeWorkspaceId = workspace.id;
+        appState.activeAssetKey    = null;
+        appState.activeAssetKind   = "all";
+        appState.detailCache.clear();
+        dlgAssetSearch.value = "";
+        renderDlgWorkspaces();
+        dlgSelectedWorkspaceLabel.textContent = formatWorkspaceName(workspace.name);
+        dlgAssetCount.textContent = "";
+        dlgAssetError.textContent = "";
+        clearDlgDetail("Select a model or report.");
+
+        if (appState.assetCache.has(workspace.id)) {
+            renderDlgAssets(appState.assetCache.get(workspace.id));
+            return;
+        }
+
+        dlgAssetLoading.hidden = false;
+        dlgAssetList.hidden    = true;
+        dlgAssetEmpty.hidden   = true;
+
+        try {
+            const response = await fetch(
+                `/api/workspaces/${encodeURIComponent(workspace.id)}/assets`,
+                { headers: { "Accept": "application/json" } }
+            );
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Could not load workspace assets.");
+            }
+
+            appState.assetCache.set(workspace.id, data);
+            renderDlgAssets(data);
+        } catch (error) {
+            dlgAssetList.hidden  = true;
+            dlgAssetEmpty.hidden = true;
+            dlgAssetError.textContent = error.message;
+            clearDlgDetail("No asset details available.");
+        } finally {
+            dlgAssetLoading.hidden = true;
+        }
+    }
+
+    // ── Event listeners ───────────────────────────────────────────────────────
+    headerSignInButton.addEventListener("click", headerSignIn);
+
+    headerSignOutButton.addEventListener("click", headerSignOut);
+
+    signInPromptButton.addEventListener("click", async () => {
+        signInPromptError.textContent = "";
+        signInPromptButton.disabled = true;
+        signInPromptButtonText.textContent = "Signing in…";
+
+        try {
+            const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Accept": "application/json" },
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Azure CLI sign-in failed.");
+            }
+
+            appState.isSignedIn = true;
+            appState.user = data.user || {};
+            appState.workspaces = data.workspaces || [];
+            saveSession(appState.user);
+            updateUIForAuthState();
+        } catch (error) {
+            signInPromptError.textContent = error.message;
+            signInPromptButton.disabled = false;
+            signInPromptButtonText.textContent = "Sign in with Azure CLI";
+        }
+    });
+
+    addPresetButton.addEventListener("click", openModelSelector);
+
+    closeDialogBtn.addEventListener("click", closeDialog);
+
+    modelSelectorDialog.addEventListener("click", (event) => {
+        // Close when clicking the backdrop (outside dialog-inner)
+        if (event.target === modelSelectorDialog) {
+            closeDialog();
+        }
+    });
+
+    dialogSignInBtn.addEventListener("click", () => {
+        doSignIn(() => showSelectorLayout());
+    });
+
+    dlgWorkspaceSearch.addEventListener("input", renderDlgWorkspaces);
+
+    dlgAssetSearch.addEventListener("input", () => renderDlgAssets(getActiveAssets()));
+
+    dlgAssetKindSwitch.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-kind]");
+        if (btn) setDlgAssetKind(btn.dataset.kind);
+    });
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    if (restoreSessionIfAvailable()) {
+        updateUIForAuthState();
+    } else {
+        updateUIForAuthState();
+    }
+</script>
+{% endblock %}

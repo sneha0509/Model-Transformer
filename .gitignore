@@ -219,3 +219,6 @@ __marimo__/
 
 #Sample .json
 sample.json
+
+#presets directory
+presets/

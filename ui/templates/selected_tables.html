@@ -14,6 +14,10 @@
 
 {% block app_content %}
             <div class="selection-page">
+                <div class="saved-batches-nav">
+                    <a class="back-home-link" href="/">&#8592; Back to Presets</a>
+                </div>
+
                 <section class="selection-header selection-details-section" aria-label="Model details">
                     <div class="selection-model-identity">
                         <h2>{{ selection.modelName }}</h2>
@@ -127,7 +131,7 @@
                         </div>
 
                         <div class="batch-save-row">
-                            <button class="process-tables-button" id="processTablesButton" type="button">Process tables</button>
+                            <button class="process-tables-button" id="processTablesButton" type="button">Save Preset</button>
                         </div>
                     </div>
                 </section>
@@ -544,11 +548,29 @@
             form.remove();
         }
 
-        function processTables() {
+        async function processTables() {
             const payload = buildSavedBatchesPayload();
+            processTablesButton.disabled = true;
+            processTablesButton.textContent = "Saving preset...";
 
-            localStorage.setItem("model-transformer-saved-batches", JSON.stringify(payload));
-            openSavedBatchesPage(payload);
+            try {
+                const response = await fetch("/api/presets", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not save preset.");
+                }
+
+                window.location.href = `/saved-batches/${data.presetId}`;
+            } catch (error) {
+                processTablesButton.disabled = false;
+                processTablesButton.textContent = "Save Preset";
+                alert(`Failed to save preset: ${error.message}`);
+            }
         }
 
         getDropZones().forEach(registerDropZone);
@@ -565,5 +587,20 @@
             updateBatchCounts();
         });
         processTablesButton.addEventListener("click", processTables);
+
+        // ── Session restoration ──────────────────────────────────────────
+        (function() {
+            const SESSION_KEY = "model-transformer-session";
+            try {
+                const stored = localStorage.getItem(SESSION_KEY);
+                const session = stored ? JSON.parse(stored) : null;
+                if (session && session.name) {
+                    // User session is active - this page was accessed while logged in
+                    // The user info from selectionPayload is already displayed
+                }
+            } catch (e) {
+                // Ignore session restoration errors
+            }
+        })();
     </script>
     {% endblock %}
