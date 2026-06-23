@@ -176,6 +176,7 @@ def normalize_selected_tables_payload(payload):
     saved_batches = normalize_saved_batches_payload(payload)
 
     return {
+        "presetId": str(payload.get("presetId") or payload.get("id") or ""),
         "presetName": get_preset_name(payload),
         "workspaceName": str(payload.get("workspaceName") or "Unavailable"),
         "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
@@ -209,16 +210,28 @@ def normalize_saved_batches_payload(payload):
     unassigned_tables = normalize_table_names(payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else [])
 
     normalized_batches = []
+    batch_table_names = []
     for index, batch in enumerate(batches, start=1):
         batch = batch if isinstance(batch, dict) else {}
         tables = batch.get("tables") if isinstance(batch.get("tables"), list) else []
+        normalized_tables = [str(table).strip() for table in tables if str(table).strip()]
+        for table in normalized_tables:
+            if table not in batch_table_names:
+                batch_table_names.append(table)
         normalized_batches.append({
             "name": str(batch.get("name") or f"Batch {index}"),
-            "tables": [str(table).strip() for table in tables if str(table).strip()],
+            "tables": normalized_tables,
         })
 
     if not normalized_batches:
         normalized_batches.append({"name": "Batch 1", "tables": []})
+
+    if not selected_tables:
+        selected_tables = batch_table_names[:]
+    else:
+        for table in batch_table_names:
+            if table not in selected_tables:
+                selected_tables.append(table)
 
     if not all_tables:
         all_tables = selected_tables[:]
@@ -265,6 +278,7 @@ def normalize_saved_batches_payload(payload):
         commit_mode = "transactional"
 
     saved = {
+        "presetId": str(payload.get("presetId") or payload.get("id") or ""),
         "savedAt": str(payload.get("savedAt") or "Unavailable"),
         "presetName": preset_name,
         "workspaceName": str(payload.get("workspaceName") or "Unavailable"),

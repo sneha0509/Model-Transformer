@@ -69,6 +69,7 @@ def view_selected_tables_preset(preset_id):
     except Exception:
         return redirect(url_for("home"))
 
+    saved["presetId"] = preset_id
     selection = normalize_selected_tables_payload(saved)
     return render_template("selected_tables.html", selection=selection)
 
@@ -122,10 +123,36 @@ def save_preset():
             preset_id = f"{preset_id_base}_{suffix}"
             preset_path = PRESETS_DIR / f"{preset_id}.json"
             suffix += 1
+        saved["presetId"] = preset_id
         with open(preset_path, "w", encoding="utf-8") as f:
             json.dump(saved, f, indent=4)
     except OSError as exc:
         return jsonify({"message": f"Could not save preset: {exc}"}), 500
+    return jsonify({"presetId": preset_id})
+
+
+@model_transformer.put("/api/presets/<preset_id>")
+def update_preset(preset_id):
+    if not re.fullmatch(r"[\w.-]+", preset_id):
+        return jsonify({"message": "Invalid preset ID."}), 400
+
+    preset_path = PRESETS_DIR / f"{preset_id}.json"
+    if not preset_path.exists():
+        return jsonify({"message": "Preset not found."}), 404
+
+    payload = get_request_payload()
+    if not isinstance(payload, dict):
+        payload = {}
+    payload["presetId"] = preset_id
+    saved = normalize_saved_batches_payload(payload)
+    saved["presetId"] = preset_id
+
+    try:
+        with open(preset_path, "w", encoding="utf-8") as f:
+            json.dump(saved, f, indent=4)
+    except OSError as exc:
+        return jsonify({"message": f"Could not update preset: {exc}"}), 500
+
     return jsonify({"presetId": preset_id})
 
 
