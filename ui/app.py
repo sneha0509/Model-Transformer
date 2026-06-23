@@ -1,7 +1,6 @@
 import json
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -57,27 +56,32 @@ def selected_tables():
     return render_template("selected_tables.html", selection=selection)
 
 
+@model_transformer.get("/selected-tables/<preset_id>")
+def view_selected_tables_preset(preset_id):
+    if not re.fullmatch(r"[\w.-]+", preset_id):
+        return redirect(url_for("home"))
+    preset_path = PRESETS_DIR / f"{preset_id}.json"
+    if not preset_path.exists():
+        return redirect(url_for("home"))
+    try:
+        with open(preset_path, encoding="utf-8") as f:
+            saved = json.load(f)
+    except Exception:
+        return redirect(url_for("home"))
+
+    selection = normalize_selected_tables_payload(saved)
+    return render_template("selected_tables.html", selection=selection)
+
+
 @model_transformer.post("/saved-batches")
 def saved_batches():
-    saved = normalize_saved_batches_payload(get_request_payload())
-    saved_json = json.dumps(saved, indent=4)
-    return render_template("saved_batches.html", saved=saved, saved_json=saved_json, error=None)
+    selection = normalize_selected_tables_payload(get_request_payload())
+    return render_template("selected_tables.html", selection=selection)
 
 
 @model_transformer.get("/saved-batches/<preset_id>")
 def view_saved_batch(preset_id):
-    if not re.fullmatch(r"[\w.-]+", preset_id):
-        return render_template("saved_batches.html", saved=None, saved_json="", error="Invalid preset ID.")
-    preset_path = PRESETS_DIR / f"{preset_id}.json"
-    if not preset_path.exists():
-        return render_template("saved_batches.html", saved=None, saved_json="", error="Preset not found.")
-    try:
-        with open(preset_path, encoding="utf-8") as f:
-            saved = json.load(f)
-        saved_json = json.dumps(saved, indent=4)
-        return render_template("saved_batches.html", saved=saved, saved_json=saved_json, error=None)
-    except Exception as exc:
-        return render_template("saved_batches.html", saved=None, saved_json="", error=str(exc))
+    return redirect(url_for("view_selected_tables_preset", preset_id=preset_id))
 
 
 @model_transformer.get("/api/presets")
@@ -89,9 +93,11 @@ def list_presets():
             try:
                 with open(f, encoding="utf-8") as file:
                     data = json.load(file)
+                preset_name = data.get("presetName") or data.get("modelName") or "Unnamed preset"
                 presets.append({
                     "id": f.stem,
-                    "modelName": data.get("modelName", "Unnamed model"),
+                    "modelName": preset_name,
+                    "presetName": preset_name,
                     "workspaceName": data.get("workspaceName", "Unavailable"),
                     "savedAt": data.get("savedAt", ""),
                     "batchCount": data.get("batchCount", 0),
@@ -106,16 +112,38 @@ def list_presets():
 def save_preset():
     payload = get_request_payload()
     saved = normalize_saved_batches_payload(payload)
-    model_name = re.sub(r"[^\w]+", "_", saved.get("modelName") or "preset").strip("_") or "preset"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    preset_id = f"{model_name}_{timestamp}"
+    preset_id_base = re.sub(r"[^\w]+", "_", saved.get("presetName") or saved.get("modelName") or "preset").strip("_") or "preset"
+    preset_id = preset_id_base
     try:
         PRESETS_DIR.mkdir(exist_ok=True)
-        with open(PRESETS_DIR / f"{preset_id}.json", "w", encoding="utf-8") as f:
+        preset_path = PRESETS_DIR / f"{preset_id}.json"
+        suffix = 2
+        while preset_path.exists():
+            preset_id = f"{preset_id_base}_{suffix}"
+            preset_path = PRESETS_DIR / f"{preset_id}.json"
+            suffix += 1
+        with open(preset_path, "w", encoding="utf-8") as f:
             json.dump(saved, f, indent=4)
     except OSError as exc:
         return jsonify({"message": f"Could not save preset: {exc}"}), 500
     return jsonify({"presetId": preset_id})
+
+
+@model_transformer.delete("/api/presets/<preset_id>")
+def delete_preset(preset_id):
+    if not re.fullmatch(r"[\w.-]+", preset_id):
+        return jsonify({"message": "Invalid preset ID."}), 400
+
+    preset_path = PRESETS_DIR / f"{preset_id}.json"
+    if not preset_path.exists():
+        return jsonify({"message": "Preset not found."}), 404
+
+    try:
+        preset_path.unlink()
+    except OSError as exc:
+        return jsonify({"message": f"Could not delete preset: {exc}"}), 500
+
+    return jsonify({"message": "Preset deleted."})
 
 
 @model_transformer.post("/api/login")

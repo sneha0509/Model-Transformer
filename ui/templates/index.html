@@ -357,16 +357,25 @@
             return asset.webUrl || "";
         }
 
-        function openSelectedTablesPage(selectedTables, asset) {
+        function openSelectedTablesPage(selectedTables, asset, displayedTables = []) {
             const workspace = findActiveWorkspace() || {};
             const form = document.createElement("form");
             const input = document.createElement("input");
+            const allTables = displayedTables.length
+                ? displayedTables
+                : Array.isArray(asset.tables)
+                    ? asset.tables.map((table) => table.name || "Unnamed table")
+                    : selectedTables;
+            const unselectedTables = allTables.filter((table) => !selectedTables.includes(table));
             const payload = {
                 workspaceName: formatWorkspaceName(workspace.name),
                 workspaceId: workspace.id || appState.activeWorkspaceId || "",
                 modelName: asset.name || "Unnamed model",
                 modelId: asset.id || "",
+                assetCategory: asset.category || "Model",
                 selectedTables,
+                allTables,
+                unselectedTables,
                 user: appState.activeUser || {},
             };
 
@@ -470,7 +479,8 @@
             selectionButton.addEventListener("click", () => {
                 const selectedTables = getSelectedTables();
                 if (selectedTables.length) {
-                    openSelectedTablesPage(selectedTables, asset);
+                    const displayedTables = rowCheckboxes.map((checkbox) => checkbox.dataset.tableName);
+                    openSelectedTablesPage(selectedTables, asset, displayedTables);
                 }
             });
 

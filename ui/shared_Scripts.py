@@ -1,3 +1,20 @@
+import re
+from datetime import datetime
+
+
+def make_default_preset_name(model_name):
+    safe_model_name = re.sub(r"[^\w]+", "_", str(model_name or "Preset")).strip("_") or "Preset"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{safe_model_name}_{timestamp}"
+
+
+def get_preset_name(payload):
+    preset_name = str(payload.get("presetName") or "").strip()
+    if preset_name:
+        return preset_name
+    return make_default_preset_name(payload.get("modelName"))
+
+
 def get_initials(value):
     parts = [part for part in value.replace("@", " ").replace(".", " ").split() if part]
     if not parts:
@@ -108,23 +125,68 @@ def infer_connection_mode(dataset, datasources, definition_metadata):
     return target_storage_mode or "Unavailable"
 
 
+def get_table_name(value):
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("displayName") or value.get("tableName")
+    return str(value).strip()
+
+
+def normalize_table_names(tables):
+    normalized_tables = []
+    if not isinstance(tables, list):
+        return normalized_tables
+
+    for table in tables:
+        table_name = get_table_name(table)
+        if table_name and table_name not in normalized_tables:
+            normalized_tables.append(table_name)
+    return normalized_tables
+
+
 def normalize_selected_tables_payload(payload):
     payload = payload if isinstance(payload, dict) else {}
     selected_tables = payload.get("selectedTables") if isinstance(payload, dict) else []
+    all_tables = payload.get("allTables") if isinstance(payload, dict) else []
+    unselected_tables = payload.get("unselectedTables") if isinstance(payload, dict) else []
     if not isinstance(selected_tables, list):
         selected_tables = []
+
+    normalized_selected_tables = normalize_table_names(selected_tables)
+    normalized_all_tables = normalize_table_names(all_tables)
+    normalized_posted_unselected_tables = normalize_table_names(unselected_tables)
+    if not normalized_all_tables:
+        normalized_all_tables = normalized_selected_tables[:]
+        for table in normalized_posted_unselected_tables:
+            if table not in normalized_all_tables:
+                normalized_all_tables.append(table)
+    else:
+        for table in normalized_selected_tables:
+            if table not in normalized_all_tables:
+                normalized_all_tables.append(table)
+        for table in normalized_posted_unselected_tables:
+            if table not in normalized_all_tables:
+                normalized_all_tables.append(table)
+    normalized_unselected_tables = [table for table in normalized_all_tables if table not in normalized_selected_tables]
 
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
     user_name = str(user.get("name") or "Azure CLI user")
     user_email = str(user.get("email") or "")
     user_tenant_id = str(user.get("tenantId") or "")
 
+    saved_batches = normalize_saved_batches_payload(payload)
+
     return {
+        "presetName": get_preset_name(payload),
         "workspaceName": str(payload.get("workspaceName") or "Unavailable"),
         "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
         "modelName": str(payload.get("modelName") or "Unavailable"),
         "modelId": str(payload.get("modelId") or "Unavailable"),
-        "selectedTables": [str(table).strip() for table in selected_tables if str(table).strip()],
+        "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
+        "selectedTables": normalized_selected_tables,
+        "allTables": normalized_all_tables,
+        "unselectedTables": normalized_unselected_tables,
+        "batchCreationSettings": saved_batches["batchCreationSettings"],
+        "batches": saved_batches["batches"],
         "user": {
             "name": user_name,
             "email": user_email,
@@ -140,6 +202,11 @@ def normalize_saved_batches_payload(payload):
     payload = payload if isinstance(payload, dict) else {}
     batches = payload.get("batches") if isinstance(payload.get("batches"), list) else []
     batch_creation_settings = payload.get("batchCreationSettings") if isinstance(payload.get("batchCreationSettings"), dict) else {}
+    preset_name = get_preset_name(payload)
+    selected_tables = normalize_table_names(payload.get("selectedTables") if isinstance(payload.get("selectedTables"), list) else [])
+    all_tables = normalize_table_names(payload.get("allTables") if isinstance(payload.get("allTables"), list) else [])
+    unselected_tables = normalize_table_names(payload.get("unselectedTables") if isinstance(payload.get("unselectedTables"), list) else [])
+    unassigned_tables = normalize_table_names(payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else [])
 
     normalized_batches = []
     for index, batch in enumerate(batches, start=1):
@@ -153,8 +220,21 @@ def normalize_saved_batches_payload(payload):
     if not normalized_batches:
         normalized_batches.append({"name": "Batch 1", "tables": []})
 
-    selected_tables = payload.get("selectedTables") if isinstance(payload.get("selectedTables"), list) else []
-    unassigned_tables = payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else []
+    if not all_tables:
+        all_tables = selected_tables[:]
+        for table in unselected_tables:
+            if table not in all_tables:
+                all_tables.append(table)
+    else:
+        for table in selected_tables:
+            if table not in all_tables:
+                all_tables.append(table)
+        for table in unselected_tables:
+            if table not in all_tables:
+                all_tables.append(table)
+    if not unselected_tables:
+        unselected_tables = [table for table in all_tables if table not in selected_tables]
+
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
     user_name = str(user.get("name") or "Azure CLI user")
     timeout_minutes = batch_creation_settings.get("timeoutMinutes")
@@ -186,12 +266,16 @@ def normalize_saved_batches_payload(payload):
 
     saved = {
         "savedAt": str(payload.get("savedAt") or "Unavailable"),
+        "presetName": preset_name,
         "workspaceName": str(payload.get("workspaceName") or "Unavailable"),
         "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
         "modelName": str(payload.get("modelName") or "Unavailable"),
         "modelId": str(payload.get("modelId") or "Unavailable"),
-        "selectedTables": [str(table).strip() for table in selected_tables if str(table).strip()],
-        "unassignedTables": [str(table).strip() for table in unassigned_tables if str(table).strip()],
+        "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
+        "selectedTables": selected_tables,
+        "allTables": all_tables,
+        "unselectedTables": unselected_tables,
+        "unassignedTables": unassigned_tables,
         "batchCreationSettings": {
             "timeoutMinutes": timeout_minutes,
             "commitMode": commit_mode,

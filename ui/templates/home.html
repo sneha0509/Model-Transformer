@@ -3,7 +3,7 @@
 {% block title %}Model Transformer Portal{% endblock %}
 {% block app_shell_attributes %}id="appShell"{% endblock %}
 {% block app_aria_label %}Model Transformer home{% endblock %}
-{% block app_title %}Preset Library{% endblock %}
+{% block app_title %}Home Page{% endblock %}
 
 {% block user_menu %}
     <div id="headerUserArea">
@@ -318,10 +318,12 @@
 
         presetEmptyState.hidden = true;
         presets.forEach((preset) => {
-            const card = document.createElement("button");
-            card.type = "button";
+            const card = document.createElement("article");
             card.className = "preset-card";
-            card.setAttribute("aria-label", `View preset: ${preset.modelName}`);
+            const openButton = document.createElement("button");
+            openButton.type = "button";
+            openButton.className = "preset-card-open";
+            openButton.setAttribute("aria-label", `View preset: ${preset.modelName}`);
 
             const ws = document.createElement("p");
             ws.className = "eyebrow preset-card-workspace";
@@ -338,13 +340,50 @@
             const saved   = formatSavedAt(preset.savedAt);
             meta.textContent = [batches, tables, saved].filter(Boolean).join(" · ");
 
-            card.append(ws, name, meta);
-            card.addEventListener("click", () => {
-                window.location.href = `/saved-batches/${preset.id}`;
-            });
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "preset-delete-button";
+            deleteButton.textContent = "Delete";
+            deleteButton.setAttribute("aria-label", `Delete preset: ${preset.modelName}`);
 
+            openButton.append(ws, name, meta);
+            openButton.addEventListener("click", () => {
+                window.location.href = `/selected-tables/${preset.id}`;
+            });
+            deleteButton.addEventListener("click", () => deletePreset(preset, deleteButton));
+
+            card.append(openButton, deleteButton);
             presetGrid.append(card);
         });
+    }
+
+    async function deletePreset(preset, button) {
+        const name = preset.presetName || preset.modelName || "this preset";
+        if (!window.confirm(`Delete preset "${name}"?`)) {
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = "Deleting...";
+        presetLoadError.textContent = "";
+
+        try {
+            const response = await fetch(`/api/presets/${encodeURIComponent(preset.id)}`, {
+                method: "DELETE",
+                headers: {"Accept": "application/json"},
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || "Could not delete preset.");
+            }
+
+            loadPresets();
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = "Delete";
+            presetLoadError.textContent = error.message;
+        }
     }
 
     // ── Sign-in ───────────────────────────────────────────────────────────────
@@ -617,16 +656,25 @@
             : asset.webUrl || "";
     }
 
-    function openSelectedTablesPage(selectedTables, asset) {
+    function openSelectedTablesPage(selectedTables, asset, displayedTables = []) {
         const workspace = findActiveWorkspace() || {};
         const form  = document.createElement("form");
         const input = document.createElement("input");
+        const allTables = displayedTables.length
+            ? displayedTables
+            : Array.isArray(asset.tables)
+                ? asset.tables.map((table) => table.name || "Unnamed table")
+                : selectedTables;
+        const unselectedTables = allTables.filter((table) => !selectedTables.includes(table));
         const payload = {
             workspaceName: formatWorkspaceName(workspace.name),
             workspaceId:   workspace.id || appState.activeWorkspaceId || "",
             modelName:     asset.name || "Unnamed model",
             modelId:       asset.id || "",
+            assetCategory: asset.category || "Model",
             selectedTables,
+            allTables,
+            unselectedTables,
             user: appState.user || {},
         };
 
@@ -727,7 +775,8 @@
         selectionButton.addEventListener("click", () => {
             const selected = getSelectedTables();
             if (selected.length) {
-                openSelectedTablesPage(selected, asset);
+                const displayedTables = rowCheckboxes.map((cb) => cb.dataset.tableName);
+                openSelectedTablesPage(selected, asset, displayedTables);
             }
         });
 
