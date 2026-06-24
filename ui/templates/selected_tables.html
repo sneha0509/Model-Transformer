@@ -1,42 +1,23 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Selected tables - {{ selection.modelName }}</title>
-    <script>
-        const savedTheme = localStorage.getItem("portal-theme") || "light";
-        document.documentElement.dataset.theme = savedTheme;
-    </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <main class="dashboard-shell">
-        <section class="app-shell selection-shell" aria-label="Selected tables">
-            <header class="app-header">
-                <div class="brand-block compact">
-                    <span class="brand-mark">MT</span>
-                    <div>
-                        <p class="eyebrow">Model Transformer</p>
-                        <h1>Selected tables</h1>
-                    </div>
-                </div>
+{% extends "base.html" %}
 
-                <div class="header-actions">
-                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
-                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
-                        <span class="theme-label" id="themeLabel">Light</span>
-                    </button>
-                    <div class="user-menu" id="userMenu">
+{% block title %}Selected tables - {{ selection.modelName }}{% endblock %}
+{% block app_shell_class %}selection-shell{% endblock %}
+{% block app_aria_label %}Selected tables{% endblock %}
+{% block app_title %}Selected tables{% endblock %}
+
+{% block user_menu %}
                         <div>
                             <small>Logged user</small>
                             <strong>{{ selection.user.name }}</strong>
                         </div>
-                    </div>
-                </div>
-            </header>
+{% endblock %}
 
+{% block app_content %}
             <div class="selection-page">
+                <div class="selection-nav">
+                    <a class="back-home-link" href="/">&#8592; Back to home</a>
+                </div>
+
                 <section class="selection-header selection-details-section" aria-label="Model details">
                     <div class="selection-model-identity">
                         <h2>{{ selection.modelName }}</h2>
@@ -59,19 +40,19 @@
                         <div class="control-tuning-grid" aria-label="Batch execution settings">
                             <label class="control-field" for="batchTimeoutInput">
                                 <span>Timeout</span>
-                                <input id="batchTimeoutInput" type="number" min="1" step="1" value="30" inputmode="numeric">
+                                <input id="batchTimeoutInput" type="number" min="1" step="1" value="{{ selection.batchCreationSettings.timeoutMinutes }}" inputmode="numeric">
                                 <small>Minutes</small>
                             </label>
 
                             <label class="control-field" for="maxParallelismInput">
                                 <span>Max Parallelism</span>
-                                <input id="maxParallelismInput" type="number" min="1" step="1" value="4" inputmode="numeric">
+                                <input id="maxParallelismInput" type="number" min="1" step="1" value="{{ selection.batchCreationSettings.maxParallelism }}" inputmode="numeric">
                                 <small>Concurrent batches</small>
                             </label>
 
                             <label class="control-field" for="retryCountInput">
                                 <span>Retry count</span>
-                                <input id="retryCountInput" type="number" min="0" step="1" value="3" inputmode="numeric">
+                                <input id="retryCountInput" type="number" min="0" step="1" value="{{ selection.batchCreationSettings.retryCount }}" inputmode="numeric">
                                 <small>Attempts</small>
                             </label>
                         </div>
@@ -80,9 +61,9 @@
                             <div class="control-field commit-mode-field">
                                 <span id="commitModeLabel">Commit mode</span>
                                 <div class="commit-mode-switch" role="radiogroup" aria-labelledby="commitModeLabel">
-                                    <input class="commit-mode-input" id="commitModeTransactional" name="commitMode" type="radio" value="transactional" checked>
+                                    <input class="commit-mode-input" id="commitModeTransactional" name="commitMode" type="radio" value="transactional" {% if selection.batchCreationSettings.commitMode != 'partial-batch' %}checked{% endif %}>
                                     <label for="commitModeTransactional">Transactional</label>
-                                    <input class="commit-mode-input" id="commitModePartialBatch" name="commitMode" type="radio" value="partial-batch">
+                                    <input class="commit-mode-input" id="commitModePartialBatch" name="commitMode" type="radio" value="partial-batch" {% if selection.batchCreationSettings.commitMode == 'partial-batch' %}checked{% endif %}>
                                     <label for="commitModePartialBatch">Partial batch</label>
                                 </div>
                             </div>
@@ -93,30 +74,63 @@
                 </section>
 
                 <section class="batch-workspace" aria-label="Table batches">
-                    <div class="table-source-panel" aria-labelledby="selectedTablesTitle">
-                        <div class="batch-panel-heading">
+                    <div class="table-panel-stack">
+                        <section class="model-table-refresh-panel" aria-labelledby="refreshModelTablesTitle">
                             <div>
-                                <p class="eyebrow">Table name</p>
-                                <h2 id="selectedTablesTitle">Selected tables</h2>
+                                <p class="eyebrow">Model metadata</p>
+                                <h2 id="refreshModelTablesTitle">Refresh tables list from models</h2>
+                                <small>Fetch the latest semantic model tables and update selected and unselected tables.</small>
                             </div>
-                        </div>
+                            <button class="model-table-refresh-button" id="refreshModelTablesButton" type="button">Refresh tables list from models</button>
+                            <p class="model-table-refresh-status" id="refreshModelTablesStatus" aria-live="polite"></p>
+                        </section>
 
-                        {% if selection.selectedTables %}
-                            <div class="table-drag-list" id="tableSourceList" aria-label="Available selected tables">
-                                {% for table in selection.selectedTables %}
-                                    <article class="table-drag-item" draggable="true" data-table-name="{{ table }}">
-                                        <strong class="table-name-label">{{ table }}</strong>
-                                        <div class="table-batch-label" aria-label="Batch assignments">
-                                            <span class="table-batch-empty">No batches assigned</span>
-                                        </div>
-                                    </article>
-                                {% endfor %}
+                        <section class="table-source-panel selected-table-panel" aria-labelledby="selectedTablesTitle">
+                            <div class="batch-panel-heading">
+                                <div>
+                                    <p class="eyebrow">Table name</p>
+                                    <h2 id="selectedTablesTitle">Selected tables</h2>
+                                </div>
                             </div>
-                        {% else %}
-                            <div class="table-drag-list empty-drop-zone" id="tableSourceList" data-drop-zone="source" aria-label="Available selected tables">
-                                <p class="empty-state">No tables were selected.</p>
+
+                            <div class="table-transfer-section">
+                                <div class="table-drag-list{% if not selection.selectedTables %} empty-drop-zone{% endif %}" id="tableSourceList" aria-label="Available selected tables">
+                                    <p class="empty-state table-list-empty" data-empty-state="selected" {% if selection.selectedTables %}hidden{% endif %}>No tables were selected.</p>
+                                    {% for table in selection.selectedTables %}
+                                        <article class="table-drag-item" draggable="true" data-table-name="{{ table }}">
+                                            <div class="table-drag-content">
+                                                <strong class="table-name-label">{{ table }}</strong>
+                                                <div class="table-batch-label" aria-label="Batch assignments">
+                                                    <span class="table-batch-empty">No batches assigned</span>
+                                                </div>
+                                            </div>
+                                            <button class="table-transfer-button table-remove-button" type="button" data-table-action="remove" aria-label="Remove {{ table }} from selected tables">&minus;</button>
+                                        </article>
+                                    {% endfor %}
+                                </div>
                             </div>
-                        {% endif %}
+                        </section>
+
+                        <section class="table-source-panel unselected-table-panel" aria-labelledby="unselectedTablesTitle">
+                            <div class="batch-panel-heading">
+                                <div>
+                                    <p class="eyebrow">Table name</p>
+                                    <h2 id="unselectedTablesTitle">Unselected-tables</h2>
+                                </div>
+                            </div>
+
+                            <div class="table-transfer-section">
+                                <div class="table-choice-list{% if not selection.unselectedTables %} empty-drop-zone{% endif %}" id="unselectedTableList" aria-label="Unselected tables">
+                                    <p class="empty-state table-list-empty" data-empty-state="unselected" {% if selection.unselectedTables %}hidden{% endif %}>No unselected tables.</p>
+                                    {% for table in selection.unselectedTables %}
+                                        <article class="table-choice-item" data-table-name="{{ table }}">
+                                            <strong class="table-name-label">{{ table }}</strong>
+                                            <button class="table-transfer-button table-add-button" type="button" data-table-action="add" aria-label="Add {{ table }} to selected tables">+</button>
+                                        </article>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </section>
                     </div>
 
                     <div class="batch-list-panel" aria-labelledby="batchesTitle">
@@ -129,16 +143,24 @@
                         </div>
 
                         <div class="batch-list" id="batchList">
-                            {% for batch_number in range(1, 2) %}
+                            {% for batch in selection.batches %}
+                                {% set batch_number = loop.index %}
+                                {% set batch_tables = batch.tables if batch.tables else [] %}
                                 <section class="batch-card" data-batch-tone="{{ ((batch_number - 1) % 15) + 1 }}" aria-labelledby="batch{{ batch_number }}Title">
                                     <div class="batch-card-header">
-                                        <h3 id="batch{{ batch_number }}Title">Batch {{ batch_number }}</h3>
+                                        <h3 id="batch{{ batch_number }}Title">{{ batch.name or 'Batch ' ~ batch_number }}</h3>
                                         <div class="batch-card-actions">
-                                            <span class="batch-count">0 tables</span>
+                                            <span class="batch-count">{{ batch_tables|length }} {{ 'table' if batch_tables|length == 1 else 'tables' }}</span>
                                             <button class="remove-batch-button" type="button" aria-label="Remove Batch {{ batch_number }}">Remove</button>
                                         </div>
                                     </div>
                                     <div class="batch-drop-zone" data-drop-zone="batch" aria-label="Batch {{ batch_number }} drop zone">
+                                        {% for table in batch_tables %}
+                                            <article class="batch-table-item" data-table-name="{{ table }}" data-batch-tone="{{ ((batch_number - 1) % 15) + 1 }}">
+                                                <span>{{ table }}</span>
+                                                <button class="remove-table-assignment-button" type="button" aria-label="Remove {{ table }} from Batch {{ batch_number }}">Remove</button>
+                                            </article>
+                                        {% endfor %}
                                         <div class="batch-new-table-ghost">DRAG TO ADD NEW TABLE</div>
                                     </div>
                                 </section>
@@ -150,19 +172,21 @@
                         </div>
 
                         <div class="batch-save-row">
-                            <button class="process-tables-button" id="processTablesButton" type="button">Process tables</button>
+                            <label class="preset-name-field" for="presetNameInput">
+                                <span>Preset name</span>
+                                <input id="presetNameInput" type="text" value="{{ selection.presetName }}" required>
+                            </label>
+                            <button class="process-tables-button" id="processTablesButton" type="button">Save Preset</button>
                         </div>
                     </div>
                 </section>
             </div>
-        </section>
-    </main>
+{% endblock %}
 
+{% block scripts %}
     <script>
-        const themeToggle = document.getElementById("themeToggle");
-        const themeIcon = document.getElementById("themeIcon");
-        const themeLabel = document.getElementById("themeLabel");
         const tableSourceList = document.getElementById("tableSourceList");
+        const unselectedTableList = document.getElementById("unselectedTableList");
         const batchList = document.getElementById("batchList");
         const aiRefreshButton = document.getElementById("aiRefreshButton");
         const batchTimeoutInput = document.getElementById("batchTimeoutInput");
@@ -171,27 +195,20 @@
         const commitModeInputs = Array.from(document.querySelectorAll("input[name='commitMode']"));
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
+        const presetNameInput = document.getElementById("presetNameInput");
         const processTablesButton = document.getElementById("processTablesButton");
+        const refreshModelTablesButton = document.getElementById("refreshModelTablesButton");
+        const refreshModelTablesStatus = document.getElementById("refreshModelTablesStatus");
         const selectionPayload = {{ selection | tojson }};
 
         let draggedTable = null;
 
-        function setTheme(theme) {
-            const isDark = theme === "dark";
-            document.documentElement.dataset.theme = theme;
-            localStorage.setItem("portal-theme", theme);
-            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
-            themeLabel.textContent = isDark ? "Dark" : "Light";
-            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+        function getTableItems() {
+            return Array.from(tableSourceList.querySelectorAll(".table-drag-item"));
         }
 
-        themeToggle.addEventListener("click", () => {
-            const currentTheme = document.documentElement.dataset.theme || "light";
-            setTheme(currentTheme === "dark" ? "light" : "dark");
-        });
-
-        function getTableItems() {
-            return Array.from(document.querySelectorAll(".table-drag-item"));
+        function getUnselectedTableItems() {
+            return Array.from(unselectedTableList.querySelectorAll(".table-choice-item"));
         }
 
         function getDropZones() {
@@ -281,6 +298,52 @@
             return tableItem.dataset.tableName || tableItem.textContent.trim();
         }
 
+        function normalizeTableNames(tables) {
+            const normalizedTables = [];
+
+            if (!Array.isArray(tables)) {
+                return normalizedTables;
+            }
+
+            tables.forEach((table) => {
+                const value = table && typeof table === "object"
+                    ? table.name || table.displayName || table.tableName
+                    : table;
+                const tableName = String(value || "").trim();
+
+                if (tableName && !normalizedTables.includes(tableName)) {
+                    normalizedTables.push(tableName);
+                }
+            });
+
+            return normalizedTables;
+        }
+
+        function createTableListEmptyState(kind) {
+            const emptyState = document.createElement("p");
+
+            emptyState.className = "empty-state table-list-empty";
+            emptyState.dataset.emptyState = kind;
+            emptyState.textContent = kind === "selected" ? "No tables were selected." : "No unselected tables.";
+            return emptyState;
+        }
+
+        function replaceTableLists(selectedTables, unselectedTables) {
+            tableSourceList.replaceChildren(
+                createTableListEmptyState("selected"),
+                ...selectedTables.map(createSelectedTableItem),
+            );
+            unselectedTableList.replaceChildren(
+                createTableListEmptyState("unselected"),
+                ...unselectedTables.map(createUnselectedTableItem),
+            );
+        }
+
+        function setRefreshModelTablesStatus(message, tone = "") {
+            refreshModelTablesStatus.textContent = message;
+            refreshModelTablesStatus.dataset.tone = tone;
+        }
+
         function getAssignedBatchNumbers(tableName) {
             return getAssignedBatches(tableName).map(({batchNumber}) => batchNumber);
         }
@@ -327,6 +390,176 @@
             });
         }
 
+        function syncTableListEmptyStates() {
+            const selectedItems = getTableItems();
+            const unselectedItems = getUnselectedTableItems();
+            const selectedEmpty = tableSourceList.querySelector("[data-empty-state='selected']");
+            const unselectedEmpty = unselectedTableList.querySelector("[data-empty-state='unselected']");
+
+            tableSourceList.classList.toggle("empty-drop-zone", selectedItems.length === 0);
+            unselectedTableList.classList.toggle("empty-drop-zone", unselectedItems.length === 0);
+            if (selectedEmpty) {
+                selectedEmpty.hidden = selectedItems.length > 0;
+            }
+            if (unselectedEmpty) {
+                unselectedEmpty.hidden = unselectedItems.length > 0;
+            }
+            aiRefreshButton.disabled = selectedItems.length === 0;
+        }
+
+        function createSelectedTableItem(tableName) {
+            const item = document.createElement("article");
+            const content = document.createElement("div");
+            const name = document.createElement("strong");
+            const batchLabel = document.createElement("div");
+            const emptyBatchLabel = document.createElement("span");
+            const removeButton = document.createElement("button");
+
+            item.className = "table-drag-item";
+            item.draggable = true;
+            item.dataset.tableName = tableName;
+            content.className = "table-drag-content";
+            name.className = "table-name-label";
+            name.textContent = tableName;
+            batchLabel.className = "table-batch-label";
+            batchLabel.setAttribute("aria-label", "Batch assignments");
+            emptyBatchLabel.className = "table-batch-empty";
+            emptyBatchLabel.textContent = "No batches assigned";
+            removeButton.className = "table-transfer-button table-remove-button";
+            removeButton.type = "button";
+            removeButton.dataset.tableAction = "remove";
+            removeButton.innerHTML = "&minus;";
+            removeButton.setAttribute("aria-label", `Remove ${tableName} from selected tables`);
+
+            batchLabel.append(emptyBatchLabel);
+            content.append(name, batchLabel);
+            item.append(content, removeButton);
+            registerTableItem(item);
+            registerTransferButton(removeButton);
+            return item;
+        }
+
+        function createUnselectedTableItem(tableName) {
+            const item = document.createElement("article");
+            const name = document.createElement("strong");
+            const addButton = document.createElement("button");
+
+            item.className = "table-choice-item";
+            item.dataset.tableName = tableName;
+            name.className = "table-name-label";
+            name.textContent = tableName;
+            addButton.className = "table-transfer-button table-add-button";
+            addButton.type = "button";
+            addButton.dataset.tableAction = "add";
+            addButton.textContent = "+";
+            addButton.setAttribute("aria-label", `Add ${tableName} to selected tables`);
+
+            item.append(name, addButton);
+            registerTransferButton(addButton);
+            return item;
+        }
+
+        function removeTableBatchAssignments(tableName) {
+            document.querySelectorAll(".batch-table-item").forEach((item) => {
+                if (getTableName(item) === tableName) {
+                    item.remove();
+                }
+            });
+        }
+
+        function moveSelectedTableToUnselected(tableItem) {
+            const tableName = getTableName(tableItem);
+
+            if (!tableName || getUnselectedTableItems().some((item) => getTableName(item) === tableName)) {
+                return;
+            }
+
+            removeTableBatchAssignments(tableName);
+            tableItem.remove();
+            unselectedTableList.append(createUnselectedTableItem(tableName));
+            updateBatchCounts();
+            syncTableListEmptyStates();
+        }
+
+        function moveUnselectedTableToSelected(tableItem) {
+            const tableName = getTableName(tableItem);
+
+            if (!tableName || getTableItems().some((item) => getTableName(item) === tableName)) {
+                return;
+            }
+
+            tableItem.remove();
+            tableSourceList.append(createSelectedTableItem(tableName));
+            updateBatchCounts();
+            syncTableListEmptyStates();
+        }
+
+        async function refreshModelTables() {
+            const workspaceId = selectionPayload.workspaceId;
+            const modelId = selectionPayload.modelId;
+            const assetCategory = selectionPayload.assetCategory || selectionPayload.category || "Model";
+
+            if (!workspaceId || workspaceId === "Unavailable" || !modelId || modelId === "Unavailable") {
+                setRefreshModelTablesStatus("Cannot refresh because workspace or model details are unavailable.", "error");
+                return;
+            }
+
+            refreshModelTablesButton.disabled = true;
+            refreshModelTablesButton.textContent = "Refreshing...";
+            setRefreshModelTablesStatus("Loading latest tables from the semantic model...");
+
+            try {
+                const response = await fetch(
+                    `/api/workspaces/${encodeURIComponent(workspaceId)}/assets/${encodeURIComponent(assetCategory)}/${encodeURIComponent(modelId)}/details`,
+                    {headers: {"Accept": "application/json"}},
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not refresh semantic model tables.");
+                }
+
+                const refreshedTables = normalizeTableNames(data.tables);
+                if (!refreshedTables.length) {
+                    throw new Error("No tables were returned for this semantic model.");
+                }
+
+                const currentSelectedTables = getTableItems().map(getTableName);
+                const nextSelectedTables = refreshedTables.filter((table) => currentSelectedTables.includes(table));
+                const nextUnselectedTables = refreshedTables.filter((table) => !currentSelectedTables.includes(table));
+                const removedSelectedTables = currentSelectedTables.filter((table) => !refreshedTables.includes(table));
+
+                removedSelectedTables.forEach(removeTableBatchAssignments);
+                replaceTableLists(nextSelectedTables, nextUnselectedTables);
+                selectionPayload.allTables = refreshedTables;
+                selectionPayload.selectedTables = nextSelectedTables;
+                selectionPayload.unselectedTables = nextUnselectedTables;
+                updateBatchCounts();
+                syncTableListEmptyStates();
+                setRefreshModelTablesStatus(
+                    `Updated ${refreshedTables.length} tables: ${nextSelectedTables.length} selected, ${nextUnselectedTables.length} unselected.`,
+                    "success",
+                );
+            } catch (error) {
+                setRefreshModelTablesStatus(error.message, "error");
+            } finally {
+                refreshModelTablesButton.disabled = false;
+                refreshModelTablesButton.textContent = "Refresh tables list from models";
+            }
+        }
+
+        function registerTransferButton(button) {
+            button.addEventListener("click", () => {
+                const tableItem = button.closest("[data-table-name]");
+
+                if (button.dataset.tableAction === "add") {
+                    moveUnselectedTableToSelected(tableItem);
+                } else {
+                    moveSelectedTableToUnselected(tableItem);
+                }
+            });
+        }
+
         function createBatchTableItem(tableName, batchCard) {
             const item = document.createElement("article");
             const name = document.createElement("span");
@@ -339,13 +572,24 @@
             removeButton.type = "button";
             removeButton.textContent = "Remove";
             removeButton.setAttribute("aria-label", `Remove ${tableName} from ${getBatchName(batchCard)}`);
-            removeButton.addEventListener("click", () => {
-                item.remove();
-                updateBatchCounts();
-            });
 
             item.append(name, removeButton);
+            registerBatchTableItem(item);
             return item;
+        }
+
+        function registerBatchTableItem(tableItem) {
+            const removeButton = tableItem.querySelector(".remove-table-assignment-button");
+
+            if (!removeButton || removeButton.dataset.registered === "true") {
+                return;
+            }
+
+            removeButton.dataset.registered = "true";
+            removeButton.addEventListener("click", () => {
+                tableItem.remove();
+                updateBatchCounts();
+            });
         }
 
         function assignTableNameToBatch(tableName, dropZone, sourceTableItem = null) {
@@ -553,12 +797,17 @@
 
             return {
                 savedAt: new Date().toISOString(),
+                presetName: presetNameInput.value.trim(),
+                presetId: selectionPayload.presetId || "",
                 workspaceName: selectionPayload.workspaceName || "Unavailable",
                 workspaceId: selectionPayload.workspaceId || "Unavailable",
                 modelName: selectionPayload.modelName || "Unavailable",
                 modelId: selectionPayload.modelId || "Unavailable",
-                selectedTables: selectionPayload.selectedTables || [],
+                assetCategory: selectionPayload.assetCategory || selectionPayload.category || "Model",
+                selectedTables: getTableItems().map(getTableName),
+                allTables: selectionPayload.allTables || getTableItems().map(getTableName),
                 batchCreationSettings: getBatchCreationSettings(),
+                unselectedTables: getUnselectedTableItems().map(getTableName),
                 unassignedTables: getTableItems()
                     .filter((tableItem) => getAssignedBatchNumbers(getTableName(tableItem)).length === 0)
                     .map(getTableName),
@@ -567,38 +816,51 @@
             };
         }
 
-        function openSavedBatchesPage(payload) {
-            const form = document.createElement("form");
-            const input = document.createElement("input");
+        async function processTables() {
+            const presetName = presetNameInput.value.trim();
+            if (!presetName) {
+                alert("Enter a preset name before saving.");
+                presetNameInput.focus();
+                return;
+            }
 
-            form.method = "post";
-            form.action = "/saved-batches";
-            form.target = "_blank";
-            form.hidden = true;
-            input.type = "hidden";
-            input.name = "payload";
-            input.value = JSON.stringify(payload);
-            form.append(input);
-            document.body.append(form);
-            form.submit();
-            form.remove();
-        }
-
-        function processTables() {
             const payload = buildSavedBatchesPayload();
+            const presetId = selectionPayload.presetId || "";
+            processTablesButton.disabled = true;
+            processTablesButton.textContent = "Saving preset...";
 
-            localStorage.setItem("model-transformer-saved-batches", JSON.stringify(payload));
-            openSavedBatchesPage(payload);
+            try {
+                const response = await fetch(presetId ? `/api/presets/${encodeURIComponent(presetId)}` : "/api/presets", {
+                    method: presetId ? "PUT" : "POST",
+                    headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not save preset.");
+                }
+
+                window.location.href = "/";
+            } catch (error) {
+                processTablesButton.disabled = false;
+                processTablesButton.textContent = "Save Preset";
+                alert(`Failed to save preset: ${error.message}`);
+            }
         }
 
         getDropZones().forEach(registerDropZone);
         getTableItems().forEach(registerTableItem);
+        document.querySelectorAll(".batch-table-item").forEach(registerBatchTableItem);
+        document.querySelectorAll("[data-table-action]").forEach(registerTransferButton);
         document.querySelectorAll(".remove-batch-button").forEach((button) => {
             button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
         });
         updateBatchCounts();
+        syncTableListEmptyStates();
 
         aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
+        refreshModelTablesButton.addEventListener("click", refreshModelTables);
         addBatchButton.addEventListener("click", () => {
             const batchNumber = getBatchCards().length + 1;
             batchList.append(createBatchCard(batchNumber));
@@ -606,7 +868,19 @@
         });
         processTablesButton.addEventListener("click", processTables);
 
-        setTheme(document.documentElement.dataset.theme || "light");
+        // ── Session restoration ──────────────────────────────────────────
+        (function() {
+            const SESSION_KEY = "model-transformer-session";
+            try {
+                const stored = localStorage.getItem(SESSION_KEY);
+                const session = stored ? JSON.parse(stored) : null;
+                if (session && session.name) {
+                    // User session is active - this page was accessed while logged in
+                    // The user info from selectionPayload is already displayed
+                }
+            } catch (e) {
+                // Ignore session restoration errors
+            }
+        })();
     </script>
-</body>
-</html>
+    {% endblock %}

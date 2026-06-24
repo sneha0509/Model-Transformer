@@ -1,17 +1,11 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Model Transformer Portal</title>
-    <script>
-        const savedTheme = localStorage.getItem("portal-theme") || "light";
-        document.documentElement.dataset.theme = savedTheme;
-    </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-</head>
-<body>
-    <main class="dashboard-shell">
+{% extends "base.html" %}
+
+{% block title %}Model Transformer Portal{% endblock %}
+{% block app_shell_attributes %}id="appShell" hidden{% endblock %}
+{% block app_aria_label %}Model Transformer workspaces{% endblock %}
+{% block app_title %}Workspace Hub{% endblock %}
+
+{% block pre_app_content %}
         <section class="login-screen" id="loginScreen" aria-label="Login">
             <div class="login-panel">
                 <div class="brand-block">
@@ -31,26 +25,9 @@
                 </form>
             </div>
         </section>
+{% endblock %}
 
-        <section class="app-shell" id="appShell" aria-label="Model Transformer workspaces" hidden>
-            <header class="app-header">
-                <div class="brand-block compact">
-                    <span class="brand-mark">MT</span>
-                    <div>
-                        <p class="eyebrow">Model Transformer</p>
-                        <h1>Workspace Hub</h1>
-                    </div>
-                </div>
-
-                <div class="header-actions">
-                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
-                        <span class="theme-icon" id="themeIcon" aria-hidden="true">&#9728;</span>
-                        <span class="theme-label" id="themeLabel">Light</span>
-                    </button>
-                    <div class="user-menu" id="userMenu"></div>
-                </div>
-            </header>
-
+{% block app_content %}
             <div class="portal-layout three-column-layout">
                 <section class="workspace-panel" aria-labelledby="workspaceTitle">
                     <div class="section-heading inline-heading">
@@ -115,9 +92,9 @@
                     </article>
                 </aside>
             </div>
-        </section>
-    </main>
+{% endblock %}
 
+{% block scripts %}
     <script>
         const loginScreen = document.getElementById("loginScreen");
         const appShell = document.getElementById("appShell");
@@ -147,9 +124,6 @@
         const detailTable = document.getElementById("detailTable");
         const detailTables = document.getElementById("detailTables");
         const detailLink = document.getElementById("detailLink");
-        const themeToggle = document.getElementById("themeToggle");
-        const themeIcon = document.getElementById("themeIcon");
-        const themeLabel = document.getElementById("themeLabel");
 
         const appState = {
             workspaces: [],
@@ -160,15 +134,6 @@
             assetCache: new Map(),
             detailCache: new Map(),
         };
-
-        function setTheme(theme) {
-            const isDark = theme === "dark";
-            document.documentElement.dataset.theme = theme;
-            localStorage.setItem("portal-theme", theme);
-            themeIcon.innerHTML = isDark ? "&#9790;" : "&#9728;";
-            themeLabel.textContent = isDark ? "Dark" : "Light";
-            themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
-        }
 
         function setLoginLoading(isLoading) {
             loginButton.disabled = isLoading;
@@ -392,16 +357,25 @@
             return asset.webUrl || "";
         }
 
-        function openSelectedTablesPage(selectedTables, asset) {
+        function openSelectedTablesPage(selectedTables, asset, displayedTables = []) {
             const workspace = findActiveWorkspace() || {};
             const form = document.createElement("form");
             const input = document.createElement("input");
+            const allTables = displayedTables.length
+                ? displayedTables
+                : Array.isArray(asset.tables)
+                    ? asset.tables.map((table) => table.name || "Unnamed table")
+                    : selectedTables;
+            const unselectedTables = allTables.filter((table) => !selectedTables.includes(table));
             const payload = {
                 workspaceName: formatWorkspaceName(workspace.name),
                 workspaceId: workspace.id || appState.activeWorkspaceId || "",
                 modelName: asset.name || "Unnamed model",
                 modelId: asset.id || "",
+                assetCategory: asset.category || "Model",
                 selectedTables,
+                allTables,
+                unselectedTables,
                 user: appState.activeUser || {},
             };
 
@@ -505,7 +479,8 @@
             selectionButton.addEventListener("click", () => {
                 const selectedTables = getSelectedTables();
                 if (selectedTables.length) {
-                    openSelectedTablesPage(selectedTables, asset);
+                    const displayedTables = rowCheckboxes.map((checkbox) => checkbox.dataset.tableName);
+                    openSelectedTablesPage(selectedTables, asset, displayedTables);
                 }
             });
 
@@ -694,12 +669,5 @@
             setAssetKind(button.dataset.kind);
         });
 
-        themeToggle.addEventListener("click", () => {
-            const currentTheme = document.documentElement.dataset.theme || "light";
-            setTheme(currentTheme === "dark" ? "light" : "dark");
-        });
-
-        setTheme(document.documentElement.dataset.theme || "light");
     </script>
-</body>
-</html>
+{% endblock %}
