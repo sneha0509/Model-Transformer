@@ -1,30 +1,22 @@
+"""Semantic model detail assembly across Power BI and Fabric metadata sources."""
+
 import base64
 
 import requests
 
-try:
-    from .shared_Scripts import (
-        infer_connection_mode,
-        normalize_datasource_types,
-        normalize_last_refresh,
-        normalize_model,
-        normalize_push_tables,
-        normalize_refresh_schedule,
-        normalize_report,
-    )
-except ImportError:
-    from shared_Scripts import (
-        infer_connection_mode,
-        normalize_datasource_types,
-        normalize_last_refresh,
-        normalize_model,
-        normalize_push_tables,
-        normalize_refresh_schedule,
-        normalize_report,
-    )
+from core.normalization import (
+    infer_connection_mode,
+    normalize_datasource_types,
+    normalize_last_refresh,
+    normalize_model,
+    normalize_push_tables,
+    normalize_refresh_schedule,
+    normalize_report,
+)
 
 
 def get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, category, asset_id):
+    """Fetch and enrich details for either a report or a semantic model asset."""
     normalized_category = category.lower()
 
     if normalized_category == "report":
@@ -40,6 +32,7 @@ def get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, cat
 
 
 def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, dataset_id, dataset):
+    """Gather semantic model metadata from Power BI endpoints and Fabric definitions."""
     if not dataset_id:
         return empty_semantic_metadata(dataset)
 
@@ -49,6 +42,7 @@ def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, da
     push_tables = power_bi_client.get_dataset_tables(workspace_id, dataset_id)
     definition_metadata = get_fabric_definition_metadata(fabric_client, workspace_id, dataset_id)
 
+    # Prefer TMDL table metadata when Fabric exposes it; otherwise fall back to push tables.
     tables = definition_metadata.get("tables") or normalize_push_tables(push_tables)
     return {
         "owner": (dataset or {}).get("configuredBy") or "Unavailable",
@@ -65,6 +59,7 @@ def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, da
 
 
 def empty_semantic_metadata(dataset):
+    """Return the metadata shape used when a report has no backing dataset."""
     return {
         "connectionMode": infer_connection_mode(dataset or {}, None, {}),
         "tables": [],
@@ -80,6 +75,7 @@ def empty_semantic_metadata(dataset):
 
 
 def get_fabric_definition_metadata(fabric_client, workspace_id, item_id):
+    """Retrieve and parse a Fabric item definition, returning empty metadata on API errors."""
     try:
         result = fabric_client.get_item_definition(workspace_id, item_id)
     except requests.RequestException:
@@ -89,6 +85,7 @@ def get_fabric_definition_metadata(fabric_client, workspace_id, item_id):
 
 
 def parse_fabric_definition(result):
+    """Parse Fabric TMDL definition parts into table and partition metadata."""
     parts = ((result or {}).get("definition") or {}).get("parts") or []
     tables = []
 
@@ -109,6 +106,7 @@ def parse_fabric_definition(result):
 
 
 def decode_fabric_part(part):
+    """Decode a base64-encoded Fabric definition part into text."""
     payload = part.get("payload")
     if not payload:
         return ""
@@ -120,6 +118,7 @@ def decode_fabric_part(part):
 
 
 def build_model_details(dataset, semantic_metadata, workspace_id):
+    """Combine normalized dataset fields with enriched semantic model metadata."""
     model = normalize_model(dataset, workspace_id)
     return {
         **model,
@@ -138,6 +137,7 @@ def build_model_details(dataset, semantic_metadata, workspace_id):
 
 
 def build_report_details(report, semantic_metadata):
+    """Combine normalized report fields with metadata from its backing semantic model."""
     normalized_report = normalize_report(report)
     return {
         **normalized_report,

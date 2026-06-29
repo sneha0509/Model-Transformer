@@ -1381,6 +1381,7 @@ h3 {
 
 .ai-refresh-button,
 .model-table-refresh-button,
+.unselected-toggle-button,
 .add-batch-button {
     display: inline-flex;
     min-height: 38px;
@@ -1446,10 +1447,21 @@ h3 {
     background: var(--accent-soft);
 }
 
+.unselected-toggle-button {
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--surface-strong);
+}
+
 .ai-refresh-button:hover:not(:disabled),
+.unselected-toggle-button:hover,
 .add-batch-button:hover {
     background: var(--accent-strong);
     color: var(--button-text);
+}
+
+.unselected-table-panel.is-collapsed .table-transfer-section {
+    display: none;
 }
 
 .ai-refresh-button:disabled {
@@ -1519,6 +1531,12 @@ h3 {
     align-content: start;
     grid-auto-rows: var(--table-list-row-height);
     min-height: calc(var(--table-list-row-height) + 20px);
+}
+
+.unselected-table-panel .table-choice-list {
+    max-height: min(52vh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .table-drag-list.is-drag-over,
@@ -2082,6 +2100,13 @@ h3 {
     justify-content: flex-end;
 }
 
+.preset-action-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
 .preset-name-field {
     display: grid;
     gap: 6px;
@@ -2127,6 +2152,22 @@ h3 {
 
 .process-tables-button:hover {
     background: var(--accent-strong);
+}
+
+.create-preset-button {
+    border: 1px solid var(--border);
+    color: var(--text);
+    background: var(--surface);
+}
+
+.create-preset-button:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.process-tables-button:disabled {
+    cursor: wait;
+    opacity: 0.72;
 }
 
 .saved-json-panel {
@@ -2388,6 +2429,11 @@ tr:last-child td {
         flex-direction: column;
         align-items: stretch;
         justify-content: stretch;
+    }
+
+    .preset-action-group {
+        flex-direction: column-reverse;
+        align-items: stretch;
     }
 
     .preset-name-field {

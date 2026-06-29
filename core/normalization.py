@@ -1,28 +1,26 @@
+"""Normalization helpers that shape API and UI payloads into stable dictionaries."""
+
 import re
 from datetime import datetime
 
 
 def make_default_preset_name(model_name):
+    """Create a file-friendly preset name from a model name and timestamp."""
     safe_model_name = re.sub(r"[^\w]+", "_", str(model_name or "Preset")).strip("_") or "Preset"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{safe_model_name}_{timestamp}"
 
 
 def get_preset_name(payload):
+    """Read a preset name from a payload or generate one from the model name."""
     preset_name = str(payload.get("presetName") or "").strip()
     if preset_name:
         return preset_name
     return make_default_preset_name(payload.get("modelName"))
 
 
-def get_initials(value):
-    parts = [part for part in value.replace("@", " ").replace(".", " ").split() if part]
-    if not parts:
-        return "AZ"
-    return "".join(part[0] for part in parts[:2]).upper()
-
-
 def normalize_workspace(workspace):
+    """Return the workspace fields consumed by the workspace picker."""
     workspace_type = workspace.get("type") or "Workspace"
 
     return {
@@ -33,6 +31,7 @@ def normalize_workspace(workspace):
 
 
 def normalize_model(dataset, workspace_id):
+    """Convert a Power BI dataset response into the app's semantic model shape."""
     owner = dataset.get("configuredBy") or "Owner unavailable"
     model_id = dataset.get("id")
     dataset_url = dataset.get("webUrl", "")
@@ -58,6 +57,7 @@ def normalize_model(dataset, workspace_id):
 
 
 def normalize_report(report, dataset_owners=None):
+    """Convert a Power BI report response into the app's report shape."""
     report_type = report.get("reportType") or "Report"
     owner = report.get("createdBy") or (dataset_owners or {}).get(report.get("datasetId")) or "Owner unavailable"
 
@@ -75,6 +75,7 @@ def normalize_report(report, dataset_owners=None):
 
 
 def normalize_push_tables(push_tables):
+    """Normalize table names returned by the Power BI push dataset tables API."""
     return [
         {"name": table.get("name") or "Unnamed table", "partitionCount": 0, "hasPartitions": False}
         for table in (push_tables or {}).get("value", [])
@@ -82,6 +83,7 @@ def normalize_push_tables(push_tables):
 
 
 def normalize_last_refresh(refreshes):
+    """Summarize the latest dataset refresh response for display."""
     latest = ((refreshes or {}).get("value") or [None])[0]
     if not latest:
         return {"status": "Unavailable", "time": "Unavailable", "type": "Unavailable"}
@@ -94,6 +96,7 @@ def normalize_last_refresh(refreshes):
 
 
 def normalize_refresh_schedule(schedule):
+    """Summarize a dataset refresh schedule with defaults for missing schedules."""
     if not schedule:
         return {"enabled": False, "times": [], "days": [], "timeZone": "Unavailable"}
 
@@ -106,11 +109,13 @@ def normalize_refresh_schedule(schedule):
 
 
 def normalize_datasource_types(datasources):
+    """Return sorted unique datasource types from a Power BI datasources response."""
     values = (datasources or {}).get("value") or []
     return sorted({value.get("datasourceType") for value in values if value.get("datasourceType")})
 
 
 def infer_connection_mode(dataset, datasources, definition_metadata):
+    """Infer how a semantic model connects to data from storage mode and metadata."""
     target_storage_mode = (dataset or {}).get("targetStorageMode")
     datasource_types = normalize_datasource_types(datasources)
 
@@ -126,12 +131,14 @@ def infer_connection_mode(dataset, datasources, definition_metadata):
 
 
 def get_table_name(value):
+    """Extract a table name from either a raw string or a table-like dictionary."""
     if isinstance(value, dict):
         value = value.get("name") or value.get("displayName") or value.get("tableName")
     return str(value).strip()
 
 
 def normalize_table_names(tables):
+    """Return unique, non-empty table names while preserving input order."""
     normalized_tables = []
     if not isinstance(tables, list):
         return normalized_tables
@@ -144,6 +151,7 @@ def normalize_table_names(tables):
 
 
 def normalize_selected_tables_payload(payload):
+    """Normalize the payload saved after the user selects tables for a preset."""
     payload = payload if isinstance(payload, dict) else {}
     selected_tables = payload.get("selectedTables") if isinstance(payload, dict) else []
     all_tables = payload.get("allTables") if isinstance(payload, dict) else []
@@ -155,6 +163,7 @@ def normalize_selected_tables_payload(payload):
     normalized_all_tables = normalize_table_names(all_tables)
     normalized_posted_unselected_tables = normalize_table_names(unselected_tables)
     if not normalized_all_tables:
+        # Older payloads may only post selected/unselected lists, so rebuild the full table list.
         normalized_all_tables = normalized_selected_tables[:]
         for table in normalized_posted_unselected_tables:
             if table not in normalized_all_tables:
@@ -193,13 +202,13 @@ def normalize_selected_tables_payload(payload):
             "email": user_email,
             "tenantId": user_tenant_id,
             "subscription": str(user.get("subscription") or ""),
-            "initials": str(user.get("initials") or get_initials(user_name)),
             "detail": user_email or user_tenant_id or "Signed in with Azure CLI",
         },
     }
 
 
 def normalize_saved_batches_payload(payload):
+    """Normalize saved batch settings and derive counts used by preset views."""
     payload = payload if isinstance(payload, dict) else {}
     batches = payload.get("batches") if isinstance(payload.get("batches"), list) else []
     batch_creation_settings = payload.get("batchCreationSettings") if isinstance(payload.get("batchCreationSettings"), dict) else {}
@@ -224,11 +233,13 @@ def normalize_saved_batches_payload(payload):
         })
 
     if not normalized_batches:
+        # Keep downstream templates simple by always returning at least one batch record.
         normalized_batches.append({"name": "Batch 1", "tables": []})
 
     if not selected_tables:
         selected_tables = batch_table_names[:]
     else:
+        # Treat tables already assigned to a batch as selected, even if omitted by the form.
         for table in batch_table_names:
             if table not in selected_tables:
                 selected_tables.append(table)

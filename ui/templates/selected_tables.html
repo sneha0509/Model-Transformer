@@ -111,15 +111,16 @@
                             </div>
                         </section>
 
-                        <section class="table-source-panel unselected-table-panel" aria-labelledby="unselectedTablesTitle">
+                        <section class="table-source-panel unselected-table-panel is-collapsed" aria-labelledby="unselectedTablesTitle">
                             <div class="batch-panel-heading">
                                 <div>
                                     <p class="eyebrow">Table name</p>
                                     <h2 id="unselectedTablesTitle">Unselected-tables</h2>
                                 </div>
+                                <button class="unselected-toggle-button" id="unselectedToggleButton" type="button" aria-expanded="false" aria-controls="unselectedTablesContent">Show</button>
                             </div>
 
-                            <div class="table-transfer-section">
+                            <div class="table-transfer-section" id="unselectedTablesContent">
                                 <div class="table-choice-list{% if not selection.unselectedTables %} empty-drop-zone{% endif %}" id="unselectedTableList" aria-label="Unselected tables">
                                     <p class="empty-state table-list-empty" data-empty-state="unselected" {% if selection.unselectedTables %}hidden{% endif %}>No unselected tables.</p>
                                     {% for table in selection.unselectedTables %}
@@ -176,7 +177,10 @@
                                 <span>Preset name</span>
                                 <input id="presetNameInput" type="text" value="{{ selection.presetName }}" required>
                             </label>
-                            <button class="process-tables-button" id="processTablesButton" type="button">Save Preset</button>
+                            <div class="preset-action-group">
+                                <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
+                                <button class="process-tables-button" id="processTablesButton" type="button">Save Preset</button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -195,7 +199,10 @@
         const commitModeInputs = Array.from(document.querySelectorAll("input[name='commitMode']"));
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
+        const unselectedTablePanel = document.querySelector(".unselected-table-panel");
+        const unselectedToggleButton = document.getElementById("unselectedToggleButton");
         const presetNameInput = document.getElementById("presetNameInput");
+        const createPresetButton = document.getElementById("createPresetButton");
         const processTablesButton = document.getElementById("processTablesButton");
         const refreshModelTablesButton = document.getElementById("refreshModelTablesButton");
         const refreshModelTablesStatus = document.getElementById("refreshModelTablesStatus");
@@ -548,6 +555,12 @@
             }
         }
 
+        function setUnselectedPanelCollapsed(isCollapsed) {
+            unselectedTablePanel.classList.toggle("is-collapsed", isCollapsed);
+            unselectedToggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+            unselectedToggleButton.textContent = isCollapsed ? "Show" : "Hide";
+        }
+
         function registerTransferButton(button) {
             button.addEventListener("click", () => {
                 const tableItem = button.closest("[data-table-name]");
@@ -816,7 +829,21 @@
             };
         }
 
-        async function processTables() {
+        function setPresetActionState(disabled, activeButton, activeText) {
+            [createPresetButton, processTablesButton].forEach((button) => {
+                button.disabled = disabled;
+            });
+            activeButton.textContent = activeText;
+        }
+
+        function restorePresetActionState() {
+            createPresetButton.disabled = false;
+            processTablesButton.disabled = false;
+            createPresetButton.textContent = "Create New Preset";
+            processTablesButton.textContent = "Save Preset";
+        }
+
+        async function savePreset({createNew = false} = {}) {
             const presetName = presetNameInput.value.trim();
             if (!presetName) {
                 alert("Enter a preset name before saving.");
@@ -825,9 +852,11 @@
             }
 
             const payload = buildSavedBatchesPayload();
-            const presetId = selectionPayload.presetId || "";
-            processTablesButton.disabled = true;
-            processTablesButton.textContent = "Saving preset...";
+            const presetId = createNew ? "" : selectionPayload.presetId || "";
+            const activeButton = createNew ? createPresetButton : processTablesButton;
+            const activeText = createNew ? "Creating preset..." : "Saving preset...";
+            payload.presetId = presetId;
+            setPresetActionState(true, activeButton, activeText);
 
             try {
                 const response = await fetch(presetId ? `/api/presets/${encodeURIComponent(presetId)}` : "/api/presets", {
@@ -843,8 +872,7 @@
 
                 window.location.href = "/";
             } catch (error) {
-                processTablesButton.disabled = false;
-                processTablesButton.textContent = "Save Preset";
+                restorePresetActionState();
                 alert(`Failed to save preset: ${error.message}`);
             }
         }
@@ -861,12 +889,16 @@
 
         aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
         refreshModelTablesButton.addEventListener("click", refreshModelTables);
+        unselectedToggleButton.addEventListener("click", () => {
+            setUnselectedPanelCollapsed(!unselectedTablePanel.classList.contains("is-collapsed"));
+        });
         addBatchButton.addEventListener("click", () => {
             const batchNumber = getBatchCards().length + 1;
             batchList.append(createBatchCard(batchNumber));
             updateBatchCounts();
         });
-        processTablesButton.addEventListener("click", processTables);
+        createPresetButton.addEventListener("click", () => savePreset({createNew: true}));
+        processTablesButton.addEventListener("click", () => savePreset());
 
         // ── Session restoration ──────────────────────────────────────────
         (function() {

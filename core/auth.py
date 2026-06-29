@@ -1,3 +1,5 @@
+"""Authentication helpers for Azure CLI-backed Power BI and Fabric API calls."""
+
 import json
 import os
 import shutil
@@ -5,11 +7,6 @@ import subprocess
 from pathlib import Path
 
 from azure.identity import AzureCliCredential
-
-try:
-    from .shared_Scripts import get_initials
-except ImportError:
-    from shared_Scripts import get_initials
 
 
 POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
@@ -23,6 +20,7 @@ AZURE_CLI_PATHS = (
 
 
 def resolve_azure_cli_command():
+    """Find an Azure CLI executable and make its folder available to child processes."""
     path_command = shutil.which("az") or shutil.which("az.cmd")
     candidates = [Path(path_command)] if path_command else []
     candidates.extend(AZURE_CLI_PATHS)
@@ -39,6 +37,7 @@ def resolve_azure_cli_command():
 
 
 def get_azure_cli_account():
+    """Return the active Azure CLI account, raising a user-facing error if unavailable."""
     az_command = resolve_azure_cli_command()
     if not az_command:
         checked_paths = ", ".join(str(path) for path in AZURE_CLI_PATHS)
@@ -68,6 +67,7 @@ def get_azure_cli_account():
 
 
 def get_power_bi_access_token():
+    """Acquire an access token for the Power BI REST API using Azure CLI credentials."""
     if not resolve_azure_cli_command():
         raise RuntimeError("Azure CLI was not found. Install Azure CLI and run az login.")
 
@@ -77,6 +77,7 @@ def get_power_bi_access_token():
 
 
 def get_fabric_access_token():
+    """Acquire an access token for the Fabric REST API using Azure CLI credentials."""
     if not resolve_azure_cli_command():
         raise RuntimeError("Azure CLI was not found. Install Azure CLI and run az login.")
 
@@ -86,6 +87,7 @@ def get_fabric_access_token():
 
 
 def build_user(account):
+    """Convert an Azure CLI account response into the user shape expected by the UI."""
     account_user = account.get("user") or {}
     name = account_user.get("name") or account.get("name") or "Azure CLI user"
 
@@ -94,5 +96,4 @@ def build_user(account):
         "email": account_user.get("name", ""),
         "tenantId": account.get("tenantId", ""),
         "subscription": account.get("name", ""),
-        "initials": get_initials(name),
     }
