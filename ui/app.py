@@ -40,7 +40,7 @@ def home():
 @model_transformer.post("/selected-tables")
 def selected_tables():
     selection = normalize_selected_tables_payload(get_request_payload())
-    return render_template("selected_tables.html", selection=selection)
+    return render_template("selected_tables.html", selection=selection, can_create_new_preset=False, can_overwrite_preset=False)
 
 
 @model_transformer.get("/selected-tables/<preset_id>")
@@ -51,13 +51,13 @@ def view_selected_tables_preset(preset_id):
         return redirect(url_for("home"))
 
     selection = normalize_selected_tables_payload(saved)
-    return render_template("selected_tables.html", selection=selection)
+    return render_template("selected_tables.html", selection=selection, can_create_new_preset=True, can_overwrite_preset=True)
 
 
 @model_transformer.post("/saved-batches")
 def saved_batches():
     selection = normalize_selected_tables_payload(get_request_payload())
-    return render_template("selected_tables.html", selection=selection)
+    return render_template("selected_tables.html", selection=selection, can_create_new_preset=False, can_overwrite_preset=False)
 
 
 @model_transformer.get("/saved-batches/<preset_id>")

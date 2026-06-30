@@ -178,8 +178,10 @@
                                 <input id="presetNameInput" type="text" value="{{ selection.presetName }}" required>
                             </label>
                             <div class="preset-action-group">
-                                <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
-                                <button class="process-tables-button" id="processTablesButton" type="button">Save Preset</button>
+                                {% if can_create_new_preset|default(true) %}
+                                    <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
+                                {% endif %}
+                                <button class="process-tables-button" id="processTablesButton" type="button" data-can-overwrite-preset="{{ 'true' if can_overwrite_preset|default(false) else 'false' }}">{{ 'Overwrite Preset' if can_overwrite_preset|default(false) else 'Create Preset' }}</button>
                             </div>
                         </div>
                     </div>
@@ -207,6 +209,7 @@
         const refreshModelTablesButton = document.getElementById("refreshModelTablesButton");
         const refreshModelTablesStatus = document.getElementById("refreshModelTablesStatus");
         const selectionPayload = {{ selection | tojson }};
+        const canOverwritePreset = processTablesButton.dataset.canOverwritePreset === "true";
 
         let draggedTable = null;
 
@@ -830,17 +833,19 @@
         }
 
         function setPresetActionState(disabled, activeButton, activeText) {
-            [createPresetButton, processTablesButton].forEach((button) => {
+            [createPresetButton, processTablesButton].filter(Boolean).forEach((button) => {
                 button.disabled = disabled;
             });
             activeButton.textContent = activeText;
         }
 
         function restorePresetActionState() {
-            createPresetButton.disabled = false;
+            if (createPresetButton) {
+                createPresetButton.disabled = false;
+                createPresetButton.textContent = "Create New Preset";
+            }
             processTablesButton.disabled = false;
-            createPresetButton.textContent = "Create New Preset";
-            processTablesButton.textContent = "Save Preset";
+            processTablesButton.textContent = canOverwritePreset ? "Overwrite Preset" : "Create Preset";
         }
 
         async function savePreset({createNew = false} = {}) {
@@ -851,10 +856,14 @@
                 return;
             }
 
+            if (!createNew && canOverwritePreset && !window.confirm(`Overwrite preset "${presetName}"? This will replace the existing preset configuration.`)) {
+                return;
+            }
+
             const payload = buildSavedBatchesPayload();
-            const presetId = createNew ? "" : selectionPayload.presetId || "";
+            const presetId = createNew || !canOverwritePreset ? "" : selectionPayload.presetId || "";
             const activeButton = createNew ? createPresetButton : processTablesButton;
-            const activeText = createNew ? "Creating preset..." : "Saving preset...";
+            const activeText = createNew || !canOverwritePreset ? "Creating preset..." : "Overwriting preset...";
             payload.presetId = presetId;
             setPresetActionState(true, activeButton, activeText);
 
@@ -897,7 +906,9 @@
             batchList.append(createBatchCard(batchNumber));
             updateBatchCounts();
         });
-        createPresetButton.addEventListener("click", () => savePreset({createNew: true}));
+        if (createPresetButton) {
+            createPresetButton.addEventListener("click", () => savePreset({createNew: true}));
+        }
         processTablesButton.addEventListener("click", () => savePreset());
 
         // ── Session restoration ──────────────────────────────────────────
