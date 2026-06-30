@@ -35,10 +35,28 @@ class PowerBIClient:
         response.raise_for_status()
         return response.json()
 
+    def post_json(self, url, payload):
+        """Perform a POST request and raise if the Power BI API reports an error."""
+        response = requests.post(
+            url,
+            headers={**self.headers, "Content-Type": "application/json"},
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
     def get_json_or_none(self, url, params=None):
         """Return JSON for optional endpoints, suppressing HTTP errors as unavailable data."""
         try:
             return self.get_json(url, params=params)
+        except requests.HTTPError:
+            return None
+
+    def post_json_or_none(self, url, payload):
+        """Return JSON for optional POST endpoints, suppressing HTTP errors as unavailable data."""
+        try:
+            return self.post_json(url, payload)
         except requests.HTTPError:
             return None
 
@@ -92,3 +110,14 @@ class PowerBIClient:
     def get_dataset_tables(self, workspace_id, dataset_id):
         """Return table metadata for push datasets when available."""
         return self.get_json_or_none(f"{self.workspace_url(workspace_id)}/datasets/{dataset_id}/tables")
+
+    def execute_dax_query(self, workspace_id, dataset_id, query):
+        """Run a DAX query against a semantic model when the endpoint is available."""
+        payload = {
+            "queries": [{"query": query}],
+            "serializerSettings": {"includeNulls": True},
+        }
+        return self.post_json_or_none(
+            f"{self.workspace_url(workspace_id)}/datasets/{dataset_id}/executeQueries",
+            payload,
+        )

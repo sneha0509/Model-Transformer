@@ -15,6 +15,21 @@ from core.normalization import (
 )
 
 
+VISIBLE_TABLES_DAX_QUERY = """
+EVALUATE
+SELECTCOLUMNS(
+    FILTER(
+        INFO.VIEW.TABLES(),
+        [IsPrivate] = FALSE()
+            && [ShowAsVariationOnly] = FALSE()
+    ),
+    "Name", [Name],
+    "IsHidden", [IsHidden]
+)
+ORDER BY [Name]
+""".strip()
+
+
 def get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, category, asset_id):
     """Fetch and enrich details for either a report or a semantic model asset."""
     normalized_category = category.lower()
@@ -39,11 +54,15 @@ def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, da
     refreshes = power_bi_client.get_dataset_refreshes(workspace_id, dataset_id)
     schedule = power_bi_client.get_dataset_refresh_schedule(workspace_id, dataset_id)
     datasources = power_bi_client.get_dataset_datasources(workspace_id, dataset_id)
+    dax_tables = get_dax_table_metadata(power_bi_client, workspace_id, dataset_id)
     push_tables = power_bi_client.get_dataset_tables(workspace_id, dataset_id)
     definition_metadata = get_fabric_definition_metadata(fabric_client, workspace_id, dataset_id)
 
-    # Prefer TMDL table metadata when Fabric exposes it; otherwise fall back to push tables.
-    tables = definition_metadata.get("tables") or normalize_push_tables(push_tables)
+    tables = (
+        enrich_dax_table_metadata(dax_tables, definition_metadata)
+        or definition_metadata.get("tables")
+        or normalize_push_tables(push_tables)
+    )
     return {
         "owner": (dataset or {}).get("configuredBy") or "Unavailable",
         "connectionMode": infer_connection_mode(dataset or {}, datasources, definition_metadata),
@@ -54,8 +73,84 @@ def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, da
         "lastRefresh": normalize_last_refresh(refreshes),
         "refreshSchedule": normalize_refresh_schedule(schedule),
         "datasourceTypes": normalize_datasource_types(datasources),
-        "metadataSource": definition_metadata.get("source") or ("Power BI tables API" if tables else "Power BI API"),
+        "metadataSource": get_metadata_source(dax_tables, definition_metadata, tables),
     }
+
+
+def get_dax_table_metadata(power_bi_client, workspace_id, dataset_id):
+    """Return visible semantic model tables from a DAX metadata query."""
+    result = power_bi_client.execute_dax_query(workspace_id, dataset_id, VISIBLE_TABLES_DAX_QUERY)
+    rows = (((result or {}).get("results") or [{}])[0].get("tables") or [{}])[0].get("rows") or []
+    tables = []
+    seen_names = set()
+
+    for row in rows:
+        table_name = get_dax_row_value(row, "Name")
+        if not table_name or table_name in seen_names:
+            continue
+
+        seen_names.add(table_name)
+        tables.append({
+            "name": table_name,
+            "isHidden": get_dax_bool_value(row, "IsHidden"),
+            "partitionCount": 0,
+            "hasPartitions": False,
+        })
+
+    return tables
+
+
+def get_dax_row_value(row, column_name):
+    """Read a DAX row value by alias, tolerating qualified column names."""
+    if not isinstance(row, dict):
+        return ""
+
+    value = row.get(column_name)
+    if value is None:
+        value = row.get(f"[{column_name}]")
+    if value is None:
+        suffix = f"[{column_name}]"
+        value = next((candidate for key, candidate in row.items() if str(key).endswith(suffix)), "")
+
+    return str(value or "").strip()
+
+
+def get_dax_bool_value(row, column_name):
+    """Read a DAX row value as a boolean."""
+    value = get_dax_row_value(row, column_name)
+    return value.lower() == "true"
+
+
+def enrich_dax_table_metadata(dax_tables, definition_metadata):
+    """Add partition metadata to DAX-selected tables when Fabric has matching table details."""
+    definition_tables = {
+        table.get("name"): table
+        for table in definition_metadata.get("tables", [])
+        if table.get("name")
+    }
+
+    enriched_tables = []
+    for table in dax_tables:
+        definition_table = definition_tables.get(table.get("name")) or {}
+        partition_count = definition_table.get("partitionCount", table.get("partitionCount", 0))
+        enriched_tables.append({
+            **table,
+            "partitionCount": partition_count,
+            "hasPartitions": partition_count > 0,
+        })
+
+    return enriched_tables
+
+
+def get_metadata_source(dax_tables, definition_metadata, tables):
+    """Describe which metadata source supplied the table list."""
+    if dax_tables:
+        return "Power BI DAX query"
+    if definition_metadata.get("tables"):
+        return definition_metadata.get("source") or "Fabric definition"
+    if tables:
+        return "Power BI tables API"
+    return "Power BI API"
 
 
 def empty_semantic_metadata(dataset):
