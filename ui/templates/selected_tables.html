@@ -73,18 +73,44 @@
                     </div>
                 </section>
 
+                <section class="selected-table-action-row" aria-label="Selected table actions">
+                    <section class="model-table-refresh-panel selected-table-action-panel" aria-labelledby="refreshModelTablesTitle">
+                        <div>
+                            <p class="eyebrow">Model metadata</p>
+                            <h2 id="refreshModelTablesTitle">Refresh tables list from models</h2>
+                            <small>Fetch the latest semantic model tables and update selected and unselected tables.</small>
+                        </div>
+                        <button class="model-table-refresh-button" id="refreshModelTablesButton" type="button">Refresh tables list from models</button>
+                    </section>
+
+                    <section class="model-table-refresh-panel selected-table-action-panel" aria-labelledby="fetchAdvanceDataTitle">
+                        <div>
+                            <p class="eyebrow">Advance data</p>
+                            <h2 id="fetchAdvanceDataTitle">Fetch Advance Data</h2>
+                            <small>Retrieve table-level semantic model diagnostics, including row counts, column counts, and partition counts.</small>
+                        </div>
+                        <button class="model-table-refresh-button" id="fetchAdvanceDataButton" type="button">Fetch Advance Data</button>
+                    </section>
+
+                    <section class="model-table-refresh-panel selected-table-action-panel" aria-labelledby="startModelRefreshTitle">
+                        <div>
+                            <p class="eyebrow">Model refresh</p>
+                            <h2 id="startModelRefreshTitle">Start Model Refresh</h2>
+                            <small>Execute the batch sequence below, completing each batch before progressing to the next.</small>
+                        </div>
+                        <button class="model-table-refresh-button" id="startModelRefreshButton" type="button">Start Model Refresh</button>
+                    </section>
+                </section>
+
+                <section class="action-output-bar" id="actionOutputBar" hidden>
+                    <div class="action-output-stream" aria-live="polite">
+                        <p class="model-table-refresh-status" id="refreshModelTablesStatus"></p>
+                        <p class="model-table-refresh-status" id="fetchAdvanceDataStatus"></p>
+                    </div>
+                </section>
+
                 <section class="batch-workspace" aria-label="Table batches">
                     <div class="table-panel-stack">
-                        <section class="model-table-refresh-panel" aria-labelledby="refreshModelTablesTitle">
-                            <div>
-                                <p class="eyebrow">Model metadata</p>
-                                <h2 id="refreshModelTablesTitle">Refresh tables list from models</h2>
-                                <small>Fetch the latest semantic model tables and update selected and unselected tables.</small>
-                            </div>
-                            <button class="model-table-refresh-button" id="refreshModelTablesButton" type="button">Refresh tables list from models</button>
-                            <p class="model-table-refresh-status" id="refreshModelTablesStatus" aria-live="polite"></p>
-                        </section>
-
                         <section class="table-source-panel selected-table-panel" aria-labelledby="selectedTablesTitle">
                             <div class="batch-panel-heading">
                                 <div>
@@ -94,6 +120,9 @@
                             </div>
 
                             <div class="table-transfer-section">
+                                <label class="search-field table-search-field" for="selectedTableSearch">
+                                    <input id="selectedTableSearch" type="search" placeholder="Search selected tables" aria-label="Search selected tables">
+                                </label>
                                 <div class="table-drag-list{% if not selection.selectedTables %} empty-drop-zone{% endif %}" id="tableSourceList" aria-label="Available selected tables">
                                     <p class="empty-state table-list-empty" data-empty-state="selected" {% if selection.selectedTables %}hidden{% endif %}>No tables were selected.</p>
                                     {% for table in selection.selectedTables %}
@@ -103,6 +132,7 @@
                                                 <div class="table-batch-label" aria-label="Batch assignments">
                                                     <span class="table-batch-empty">No batches assigned</span>
                                                 </div>
+                                                <dl class="table-advanced-data" hidden></dl>
                                             </div>
                                             <button class="table-transfer-button table-remove-button" type="button" data-table-action="remove" aria-label="Remove {{ table }} from selected tables">&minus;</button>
                                         </article>
@@ -111,16 +141,18 @@
                             </div>
                         </section>
 
-                        <section class="table-source-panel unselected-table-panel is-collapsed" aria-labelledby="unselectedTablesTitle">
+                        <section class="table-source-panel unselected-table-panel" aria-labelledby="unselectedTablesTitle">
                             <div class="batch-panel-heading">
                                 <div>
                                     <p class="eyebrow">Table name</p>
                                     <h2 id="unselectedTablesTitle">Unselected-tables</h2>
                                 </div>
-                                <button class="unselected-toggle-button" id="unselectedToggleButton" type="button" aria-expanded="false" aria-controls="unselectedTablesContent">Show</button>
                             </div>
 
                             <div class="table-transfer-section" id="unselectedTablesContent">
+                                <label class="search-field table-search-field" for="unselectedTableSearch">
+                                    <input id="unselectedTableSearch" type="search" placeholder="Search unselected tables" aria-label="Search unselected tables">
+                                </label>
                                 <div class="table-choice-list{% if not selection.unselectedTables %} empty-drop-zone{% endif %}" id="unselectedTableList" aria-label="Unselected tables">
                                     <p class="empty-state table-list-empty" data-empty-state="unselected" {% if selection.unselectedTables %}hidden{% endif %}>No unselected tables.</p>
                                     {% for table in selection.unselectedTables %}
@@ -140,7 +172,22 @@
                                 <p class="eyebrow">Batches division</p>
                                 <h2 id="batchesTitle">Batch list</h2>
                             </div>
-                            <button class="add-batch-button" id="addBatchButton" type="button">Add batch</button>
+                        </div>
+
+                        <div class="batch-save-row">
+                            <button class="process-tables-button add-batch-button" id="addBatchButton" type="button">+ Add batch</button>
+                            <div class="preset-control-group">
+                                <label class="preset-name-field" for="presetNameInput">
+                                    <span>Preset name</span>
+                                    <input id="presetNameInput" type="text" value="{{ selection.presetName }}" required>
+                                </label>
+                                <div class="preset-action-group">
+                                    {% if can_create_new_preset|default(true) %}
+                                        <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
+                                    {% endif %}
+                                    <button class="process-tables-button" id="processTablesButton" type="button" data-can-overwrite-preset="{{ 'true' if can_overwrite_preset|default(false) else 'false' }}">{{ 'Overwrite Preset' if can_overwrite_preset|default(false) else 'Create Preset' }}</button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="batch-list" id="batchList">
@@ -171,28 +218,30 @@
                         <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Drop a new table here to create a new batch">
                             <div class="batch-new-table-ghost new-batch-ghost">Drag new table here to make new batch</div>
                         </div>
-
-                        <div class="batch-save-row">
-                            <label class="preset-name-field" for="presetNameInput">
-                                <span>Preset name</span>
-                                <input id="presetNameInput" type="text" value="{{ selection.presetName }}" required>
-                            </label>
-                            <div class="preset-action-group">
-                                {% if can_create_new_preset|default(true) %}
-                                    <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
-                                {% endif %}
-                                <button class="process-tables-button" id="processTablesButton" type="button" data-can-overwrite-preset="{{ 'true' if can_overwrite_preset|default(false) else 'false' }}">{{ 'Overwrite Preset' if can_overwrite_preset|default(false) else 'Create Preset' }}</button>
-                            </div>
-                        </div>
                     </div>
                 </section>
             </div>
+
+            <dialog class="related-tables-dialog" id="relatedTablesDialog" aria-labelledby="relatedTablesDialogTitle">
+                <div class="related-dialog-inner">
+                    <div class="dialog-head">
+                        <div>
+                            <p class="eyebrow">Relationships</p>
+                            <h2 id="relatedTablesDialogTitle">Related tables</h2>
+                        </div>
+                        <button class="close-dialog-btn" id="closeRelatedTablesDialogButton" type="button" aria-label="Close related tables dialog">&#x2715;</button>
+                    </div>
+                    <div class="related-dialog-body" id="relatedTablesDialogBody"></div>
+                </div>
+            </dialog>
 {% endblock %}
 
 {% block scripts %}
     <script>
         const tableSourceList = document.getElementById("tableSourceList");
         const unselectedTableList = document.getElementById("unselectedTableList");
+        const selectedTableSearch = document.getElementById("selectedTableSearch");
+        const unselectedTableSearch = document.getElementById("unselectedTableSearch");
         const batchList = document.getElementById("batchList");
         const aiRefreshButton = document.getElementById("aiRefreshButton");
         const batchTimeoutInput = document.getElementById("batchTimeoutInput");
@@ -201,13 +250,18 @@
         const commitModeInputs = Array.from(document.querySelectorAll("input[name='commitMode']"));
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
-        const unselectedTablePanel = document.querySelector(".unselected-table-panel");
-        const unselectedToggleButton = document.getElementById("unselectedToggleButton");
         const presetNameInput = document.getElementById("presetNameInput");
         const createPresetButton = document.getElementById("createPresetButton");
         const processTablesButton = document.getElementById("processTablesButton");
         const refreshModelTablesButton = document.getElementById("refreshModelTablesButton");
+        const actionOutputBar = document.getElementById("actionOutputBar");
         const refreshModelTablesStatus = document.getElementById("refreshModelTablesStatus");
+        const fetchAdvanceDataButton = document.getElementById("fetchAdvanceDataButton");
+        const fetchAdvanceDataStatus = document.getElementById("fetchAdvanceDataStatus");
+        const relatedTablesDialog = document.getElementById("relatedTablesDialog");
+        const relatedTablesDialogTitle = document.getElementById("relatedTablesDialogTitle");
+        const relatedTablesDialogBody = document.getElementById("relatedTablesDialogBody");
+        const closeRelatedTablesDialogButton = document.getElementById("closeRelatedTablesDialogButton");
         const selectionPayload = {{ selection | tojson }};
         const canOverwritePreset = processTablesButton.dataset.canOverwritePreset === "true";
 
@@ -235,6 +289,25 @@
 
         function getBatchTitle(batchNumber) {
             return `Batch ${batchNumber}`;
+        }
+
+        function normalizeTableSearchValue(value) {
+            return String(value || "").trim().toLocaleLowerCase();
+        }
+
+        function applyTableSearchFilter(items, query) {
+            const normalizedQuery = normalizeTableSearchValue(query);
+            let visibleCount = 0;
+
+            items.forEach((item) => {
+                const matches = !normalizedQuery || normalizeTableSearchValue(getTableName(item)).includes(normalizedQuery);
+                item.hidden = !matches;
+                if (matches) {
+                    visibleCount += 1;
+                }
+            });
+
+            return visibleCount;
         }
 
         function getBatchTone(batchNumber) {
@@ -349,9 +422,298 @@
             );
         }
 
+        function updateActionOutputVisibility() {
+            const hasOutput = [refreshModelTablesStatus, fetchAdvanceDataStatus]
+                .some((status) => status.textContent.trim());
+
+            actionOutputBar.hidden = !hasOutput;
+        }
+
+        function setFetchAdvanceDataStatus(message, tone = "") {
+            fetchAdvanceDataStatus.textContent = message;
+            fetchAdvanceDataStatus.dataset.tone = tone;
+            updateActionOutputVisibility();
+        }
+
         function setRefreshModelTablesStatus(message, tone = "") {
             refreshModelTablesStatus.textContent = message;
             refreshModelTablesStatus.dataset.tone = tone;
+            updateActionOutputVisibility();
+        }
+
+        function formatAdvancedValue(value, fallback = "Unavailable") {
+            if (value === null || value === undefined || value === "") {
+                return fallback;
+            }
+
+            return String(value);
+        }
+
+        function formatRowCount(value) {
+            const numericValue = Number(value);
+
+            return Number.isFinite(numericValue) ? numericValue.toLocaleString() : "Unavailable";
+        }
+
+        function parseRelatedTables(value) {
+            if (Array.isArray(value)) {
+                return value;
+            }
+            if (!value) {
+                return [];
+            }
+
+            try {
+                const parsed = JSON.parse(value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        }
+
+        function getVisibleTableNames() {
+            if (Array.isArray(selectionPayload.allTables) && selectionPayload.allTables.length) {
+                return selectionPayload.allTables.map((table) => String(table || "").trim()).filter(Boolean);
+            }
+
+            return [...getTableItems(), ...getUnselectedTableItems()].map(getTableName).filter(Boolean);
+        }
+
+        function filterRelatedTablesToVisible(relatedTables) {
+            const visibleLookup = new Set(getVisibleTableNames().map((tableName) => tableName.toLocaleLowerCase()));
+
+            if (!visibleLookup.size) {
+                return relatedTables;
+            }
+
+            return relatedTables.filter((relatedTable) => visibleLookup.has(String(relatedTable.name || "").trim().toLocaleLowerCase()));
+        }
+
+        function getSelectedTableDetails() {
+            return getTableItems().map((tableItem) => ({
+                name: getTableName(tableItem),
+                rowCount: tableItem.dataset.rowCount || null,
+                columnCount: tableItem.dataset.columnCount || null,
+                partitionCount: tableItem.dataset.partitionCount || null,
+                relationshipCount: tableItem.dataset.relationshipCount || null,
+                relatedTables: parseRelatedTables(tableItem.dataset.relatedTables),
+            }));
+        }
+
+        function updateRelatedTableButton(tableItem) {
+            const relatedButton = tableItem.querySelector("[data-related-table-button]");
+            const relationshipCount = Number(tableItem.dataset.relationshipCount || 0);
+
+            if (!relatedButton) {
+                return;
+            }
+
+            relatedButton.textContent = relationshipCount > 0 ? `Related (${relationshipCount})` : "Related";
+            relatedButton.title = relationshipCount > 0
+                ? `${relationshipCount} related ${relationshipCount === 1 ? "relationship" : "relationships"}`
+                : "Show related tables";
+        }
+
+        function createRelatedTableButton() {
+            const relatedButton = document.createElement("button");
+
+            relatedButton.className = "related-table-button";
+            relatedButton.type = "button";
+            relatedButton.dataset.relatedTableButton = "";
+            relatedButton.textContent = "Related";
+            registerRelatedTableButton(relatedButton);
+            return relatedButton;
+        }
+
+        function createAdvancedMetric(label, value, className = "") {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const description = document.createElement("dd");
+
+            metric.className = "table-advanced-metric";
+            if (className) {
+                metric.classList.add(className);
+            }
+            term.textContent = label;
+            description.textContent = value;
+            metric.append(term, description);
+            return metric;
+        }
+
+        function renderTableAdvancedData(tableItem, tableData) {
+            const advancedData = tableItem.querySelector(".table-advanced-data");
+
+            if (!advancedData) {
+                return;
+            }
+
+            advancedData.replaceChildren();
+            const relatedAction = document.createElement("div");
+            relatedAction.className = "table-related-actions";
+            relatedAction.append(createRelatedTableButton());
+            advancedData.append(
+                createAdvancedMetric("Rows", formatRowCount(tableData.rowCount)),
+                createAdvancedMetric("Columns", formatAdvancedValue(tableData.columnCount, "0")),
+                createAdvancedMetric("Partitions", formatAdvancedValue(tableData.partitionCount, "0")),
+                createAdvancedMetric("Relations", formatAdvancedValue(tableData.relationshipCount, "0")),
+                relatedAction,
+            );
+            advancedData.hidden = false;
+        }
+
+        function updateSelectedTableAdvancedData(tableData) {
+            const tableName = formatAdvancedValue(tableData.name, "");
+            const tableItem = getTableItems().find((item) => getTableName(item) === tableName);
+
+            if (!tableItem) {
+                return false;
+            }
+
+            const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableData.relatedTables));
+            const relationshipCount = relatedTables.reduce(
+                (count, relatedTable) => count + parseRelatedTables(relatedTable.relationships).length,
+                0,
+            );
+            const normalizedTableData = {
+                ...tableData,
+                relationshipCount,
+                relatedTables,
+            };
+
+            tableItem.dataset.rowCount = tableData.rowCount ?? "";
+            tableItem.dataset.columnCount = tableData.columnCount ?? "";
+            tableItem.dataset.partitionCount = tableData.partitionCount ?? "0";
+            tableItem.dataset.relationshipCount = relationshipCount;
+            tableItem.dataset.relatedTables = JSON.stringify(relatedTables);
+            tableItem.dataset.relationshipsLoaded = "true";
+            renderTableAdvancedData(tableItem, normalizedTableData);
+            updateRelatedTableButton(tableItem);
+            return true;
+        }
+
+        function getTableSelectionState(tableName) {
+            const isSelected = getTableItems().some((item) => getTableName(item) === tableName);
+            const batches = isSelected ? getAssignedBatches(tableName) : [];
+
+            if (!isSelected) {
+                return {
+                    selectedLabel: "Not selected",
+                    batchLabel: "Not in selected list",
+                    batchTone: "",
+                };
+            }
+            if (!batches.length) {
+                return {
+                    selectedLabel: "Selected",
+                    batchLabel: "No batch",
+                    batchTone: "",
+                };
+            }
+
+            return {
+                selectedLabel: "Selected",
+                batchLabel: batches.map(({batchLabel}) => batchLabel).join(", "),
+                batchTone: batches[0].batchTone,
+            };
+        }
+
+        function formatRelationshipDetail(relationship) {
+            const fromTable = formatAdvancedValue(relationship.fromTable, "Unknown");
+            const fromColumn = formatAdvancedValue(relationship.fromColumn, "Column");
+            const toTable = formatAdvancedValue(relationship.toTable, "Unknown");
+            const toColumn = formatAdvancedValue(relationship.toColumn, "Column");
+            const cardinalityLabel = formatRelationshipCardinality(relationship);
+            const activeLabel = relationship.isActive ? "Active" : "Inactive";
+
+            return `${fromTable}[${fromColumn}] -> ${toTable}[${toColumn}] (${cardinalityLabel}, ${activeLabel})`;
+        }
+
+        function formatCardinalityValue(value) {
+            const normalizedValue = String(value || "").trim().toLocaleLowerCase();
+
+            if (["one", "1", "single"].includes(normalizedValue)) {
+                return "1";
+            }
+            if (["many", "*", "n"].includes(normalizedValue)) {
+                return "many";
+            }
+
+            return normalizedValue || "unknown";
+        }
+
+        function formatRelationshipCardinality(relationship) {
+            return `${formatCardinalityValue(relationship.fromCardinality)} to ${formatCardinalityValue(relationship.toCardinality)}`;
+        }
+
+        function summarizeRelationshipDetails(relationships) {
+            const cardinalities = [...new Set(relationships.map(formatRelationshipCardinality))];
+            const activeCount = relationships.filter((relationship) => relationship.isActive).length;
+            const activeSummary = activeCount === relationships.length
+                ? "all active"
+                : activeCount === 0 ? "all inactive" : `${activeCount} active`;
+
+            return `${relationships.length} relationships · ${cardinalities.join(", ")} · ${activeSummary}`;
+        }
+
+        function openRelatedTablesDialog(tableItem) {
+            const tableName = getTableName(tableItem);
+            const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableItem.dataset.relatedTables));
+            const hasRelationshipData = tableItem.dataset.relationshipsLoaded === "true";
+
+            relatedTablesDialogTitle.textContent = `Related tables for ${tableName}`;
+            relatedTablesDialogBody.replaceChildren();
+
+            if (!hasRelationshipData) {
+                const emptyState = document.createElement("p");
+                emptyState.className = "related-dialog-empty";
+                emptyState.textContent = "Fetch Advance Data to load relationship metadata for this table.";
+                relatedTablesDialogBody.append(emptyState);
+                relatedTablesDialog.showModal();
+                return;
+            }
+
+            if (!relatedTables.length) {
+                const emptyState = document.createElement("p");
+                emptyState.className = "related-dialog-empty";
+                emptyState.textContent = "No related tables were returned for this table.";
+                relatedTablesDialogBody.append(emptyState);
+                relatedTablesDialog.showModal();
+                return;
+            }
+
+            const list = document.createElement("div");
+            list.className = "related-table-list";
+
+            relatedTables.forEach((relatedTable) => {
+                const state = getTableSelectionState(relatedTable.name);
+                const row = document.createElement("article");
+                const tableNameLabel = document.createElement("strong");
+                const relationshipDetail = document.createElement("span");
+                const selectedBadge = document.createElement("span");
+                const batchBadge = document.createElement("span");
+                const relationships = parseRelatedTables(relatedTable.relationships);
+
+                row.className = "related-table-row";
+                tableNameLabel.textContent = relatedTable.name;
+                relationshipDetail.className = "related-table-detail";
+                relationshipDetail.textContent = relationships.length === 1
+                    ? formatRelationshipDetail(relationships[0])
+                    : summarizeRelationshipDetails(relationships);
+                selectedBadge.className = "related-table-badge";
+                selectedBadge.dataset.state = state.selectedLabel === "Selected" ? "selected" : "unselected";
+                selectedBadge.textContent = state.selectedLabel;
+                batchBadge.className = "related-table-badge related-table-batch table-batch-chip";
+                if (state.batchTone) {
+                    batchBadge.dataset.batchTone = state.batchTone;
+                }
+                batchBadge.textContent = state.batchLabel;
+
+                row.append(tableNameLabel, relationshipDetail, selectedBadge, batchBadge);
+                list.append(row);
+            });
+
+            relatedTablesDialogBody.append(list);
+            relatedTablesDialog.showModal();
         }
 
         function getAssignedBatchNumbers(tableName) {
@@ -405,16 +767,21 @@
             const unselectedItems = getUnselectedTableItems();
             const selectedEmpty = tableSourceList.querySelector("[data-empty-state='selected']");
             const unselectedEmpty = unselectedTableList.querySelector("[data-empty-state='unselected']");
+            const selectedVisibleCount = applyTableSearchFilter(selectedItems, selectedTableSearch.value);
+            const unselectedVisibleCount = applyTableSearchFilter(unselectedItems, unselectedTableSearch.value);
 
-            tableSourceList.classList.toggle("empty-drop-zone", selectedItems.length === 0);
-            unselectedTableList.classList.toggle("empty-drop-zone", unselectedItems.length === 0);
+            tableSourceList.classList.toggle("empty-drop-zone", selectedItems.length === 0 || selectedVisibleCount === 0);
+            unselectedTableList.classList.toggle("empty-drop-zone", unselectedItems.length === 0 || unselectedVisibleCount === 0);
             if (selectedEmpty) {
-                selectedEmpty.hidden = selectedItems.length > 0;
+                selectedEmpty.textContent = selectedItems.length === 0 ? "No tables were selected." : "No selected tables match your search.";
+                selectedEmpty.hidden = selectedItems.length > 0 && selectedVisibleCount > 0;
             }
             if (unselectedEmpty) {
-                unselectedEmpty.hidden = unselectedItems.length > 0;
+                unselectedEmpty.textContent = unselectedItems.length === 0 ? "No unselected tables." : "No unselected tables match your search.";
+                unselectedEmpty.hidden = unselectedItems.length > 0 && unselectedVisibleCount > 0;
             }
             aiRefreshButton.disabled = selectedItems.length === 0;
+            fetchAdvanceDataButton.disabled = selectedItems.length === 0;
         }
 
         function createSelectedTableItem(tableName) {
@@ -423,6 +790,7 @@
             const name = document.createElement("strong");
             const batchLabel = document.createElement("div");
             const emptyBatchLabel = document.createElement("span");
+            const advancedData = document.createElement("dl");
             const removeButton = document.createElement("button");
 
             item.className = "table-drag-item";
@@ -435,6 +803,8 @@
             batchLabel.setAttribute("aria-label", "Batch assignments");
             emptyBatchLabel.className = "table-batch-empty";
             emptyBatchLabel.textContent = "No batches assigned";
+            advancedData.className = "table-advanced-data";
+            advancedData.hidden = true;
             removeButton.className = "table-transfer-button table-remove-button";
             removeButton.type = "button";
             removeButton.dataset.tableAction = "remove";
@@ -442,11 +812,17 @@
             removeButton.setAttribute("aria-label", `Remove ${tableName} from selected tables`);
 
             batchLabel.append(emptyBatchLabel);
-            content.append(name, batchLabel);
+            content.append(name, batchLabel, advancedData);
             item.append(content, removeButton);
             registerTableItem(item);
             registerTransferButton(removeButton);
             return item;
+        }
+
+        function restoreSavedSelectedTableDetails() {
+            const savedDetails = Array.isArray(selectionPayload.selectedTableDetails) ? selectionPayload.selectedTableDetails : [];
+
+            savedDetails.forEach(updateSelectedTableAdvancedData);
         }
 
         function createUnselectedTableItem(tableName) {
@@ -558,10 +934,56 @@
             }
         }
 
-        function setUnselectedPanelCollapsed(isCollapsed) {
-            unselectedTablePanel.classList.toggle("is-collapsed", isCollapsed);
-            unselectedToggleButton.setAttribute("aria-expanded", String(!isCollapsed));
-            unselectedToggleButton.textContent = isCollapsed ? "Show" : "Hide";
+        async function fetchAdvanceData() {
+            const workspaceId = selectionPayload.workspaceId;
+            const modelId = selectionPayload.datasetId || selectionPayload.modelId;
+            const selectedTables = getTableItems().map(getTableName);
+            const allTables = Array.isArray(selectionPayload.allTables) && selectionPayload.allTables.length
+                ? selectionPayload.allTables
+                : [...selectedTables, ...getUnselectedTableItems().map(getTableName)];
+
+            if (!selectedTables.length) {
+                setFetchAdvanceDataStatus("Select at least one table before fetching advanced data.", "error");
+                return;
+            }
+            if (!workspaceId || workspaceId === "Unavailable" || !modelId || modelId === "Unavailable") {
+                setFetchAdvanceDataStatus("Cannot fetch advanced data because workspace or model details are unavailable.", "error");
+                return;
+            }
+
+            fetchAdvanceDataButton.disabled = true;
+            fetchAdvanceDataButton.textContent = "Fetching...";
+            setFetchAdvanceDataStatus(`Fetching advanced data for ${selectedTables.length} selected ${selectedTables.length === 1 ? "table" : "tables"}...`);
+
+            try {
+                const response = await fetch(
+                    `/api/workspaces/${encodeURIComponent(workspaceId)}/models/${encodeURIComponent(modelId)}/advanced-table-data`,
+                    {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                        body: JSON.stringify({selectedTables, allTables}),
+                    },
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not fetch advanced table data.");
+                }
+
+                const advancedTables = Array.isArray(data.tables) ? data.tables : [];
+                const updatedCount = advancedTables.filter(updateSelectedTableAdvancedData).length;
+                selectionPayload.selectedTableDetails = getSelectedTableDetails();
+                setFetchAdvanceDataStatus(
+                    `Updated advanced data for ${updatedCount} selected ${updatedCount === 1 ? "table" : "tables"}.`,
+                    "success",
+                );
+            } catch (error) {
+                setFetchAdvanceDataStatus(error.message, "error");
+            } finally {
+                fetchAdvanceDataButton.disabled = false;
+                fetchAdvanceDataButton.textContent = "Fetch Advance Data";
+                syncTableListEmptyStates();
+            }
         }
 
         function registerTransferButton(button) {
@@ -572,6 +994,20 @@
                     moveUnselectedTableToSelected(tableItem);
                 } else {
                     moveSelectedTableToUnselected(tableItem);
+                }
+            });
+        }
+
+        function registerRelatedTableButton(button) {
+            if (!button || button.dataset.registered === "true") {
+                return;
+            }
+
+            button.dataset.registered = "true";
+            button.addEventListener("click", () => {
+                const tableItem = button.closest(".table-drag-item");
+                if (tableItem) {
+                    openRelatedTablesDialog(tableItem);
                 }
             });
         }
@@ -819,9 +1255,14 @@
                 workspaceId: selectionPayload.workspaceId || "Unavailable",
                 modelName: selectionPayload.modelName || "Unavailable",
                 modelId: selectionPayload.modelId || "Unavailable",
+                datasetId: selectionPayload.datasetId || "",
                 assetCategory: selectionPayload.assetCategory || selectionPayload.category || "Model",
                 selectedTables: getTableItems().map(getTableName),
-                allTables: selectionPayload.allTables || getTableItems().map(getTableName),
+                selectedTableDetails: getSelectedTableDetails(),
+                allTables: selectionPayload.allTables || [
+                    ...getTableItems().map(getTableName),
+                    ...getUnselectedTableItems().map(getTableName),
+                ],
                 batchCreationSettings: getBatchCreationSettings(),
                 unselectedTables: getUnselectedTableItems().map(getTableName),
                 unassignedTables: getTableItems()
@@ -893,14 +1334,21 @@
         document.querySelectorAll(".remove-batch-button").forEach((button) => {
             button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
         });
+        restoreSavedSelectedTableDetails();
         updateBatchCounts();
         syncTableListEmptyStates();
 
         aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
         refreshModelTablesButton.addEventListener("click", refreshModelTables);
-        unselectedToggleButton.addEventListener("click", () => {
-            setUnselectedPanelCollapsed(!unselectedTablePanel.classList.contains("is-collapsed"));
+        fetchAdvanceDataButton.addEventListener("click", fetchAdvanceData);
+        closeRelatedTablesDialogButton.addEventListener("click", () => relatedTablesDialog.close());
+        relatedTablesDialog.addEventListener("click", (event) => {
+            if (event.target === relatedTablesDialog) {
+                relatedTablesDialog.close();
+            }
         });
+        selectedTableSearch.addEventListener("input", syncTableListEmptyStates);
+        unselectedTableSearch.addEventListener("input", syncTableListEmptyStates);
         addBatchButton.addEventListener("click", () => {
             const batchNumber = getBatchCards().length + 1;
             batchList.append(createBatchCard(batchNumber));

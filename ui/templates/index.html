@@ -81,13 +81,13 @@
                             <a class="detail-link" id="detailLink" href="#" target="_blank" rel="noreferrer" hidden>Open in Power BI</a>
                         </div>
 
-                        <details class="detail-metrics-bar" id="detailMetricsBar">
-                            <summary>
-                                <span>Metrics</span>
+                        <section class="detail-metrics-bar" id="detailMetricsBar" aria-labelledby="detailMetricsHeading">
+                            <div class="detail-metrics-header">
+                                <span id="detailMetricsHeading">Metrics</span>
                                 <small id="detailMetricsCount"></small>
-                            </summary>
+                            </div>
                             <div class="detail-meta detail-table" id="detailTable"></div>
-                        </details>
+                        </section>
                         <div class="detail-tables" id="detailTables"></div>
                     </article>
                 </aside>
@@ -308,7 +308,6 @@
             detailContent.hidden = true;
             detailTable.replaceChildren();
             detailTables.replaceChildren();
-            detailMetricsBar.open = false;
             detailMetricsCount.textContent = "";
             detailLink.hidden = true;
         }
@@ -372,6 +371,7 @@
                 workspaceId: workspace.id || appState.activeWorkspaceId || "",
                 modelName: asset.name || "Unnamed model",
                 modelId: asset.id || "",
+                datasetId: asset.datasetId || "",
                 assetCategory: asset.category || "Model",
                 selectedTables,
                 allTables,
@@ -396,95 +396,29 @@
             detailTables.replaceChildren();
 
             const section = document.createElement("section");
-            const header = document.createElement("div");
-            const heading = document.createElement("h3");
-            const allLabel = document.createElement("label");
-            const allCheckbox = document.createElement("input");
-            const allText = document.createElement("span");
+            const selectionButton = document.createElement("button");
+            const displayedTables = Array.isArray(tables)
+                ? tables.map((table) => table.name || "Unnamed table")
+                : [];
 
             section.className = "table-values-panel";
-            header.className = "table-values-header";
-            heading.textContent = "Tables";
-            allLabel.className = "table-value-option";
-            allCheckbox.type = "checkbox";
-            allText.textContent = "Select All";
-
-            allLabel.append(allCheckbox, allText);
-            header.append(heading, allLabel);
-            section.append(header);
+            selectionButton.className = "selected-tables-button";
+            selectionButton.type = "button";
+            selectionButton.textContent = "Continue to Batch Creation";
+            selectionButton.disabled = displayedTables.length === 0;
 
             if (!Array.isArray(tables) || !tables.length) {
                 const empty = document.createElement("p");
                 empty.className = "mini-empty-state";
                 empty.textContent = "No tables available.";
                 section.append(empty);
-                detailTables.append(section);
-                return;
             }
-
-            const list = document.createElement("div");
-            const selectionButton = document.createElement("button");
-            const rowCheckboxes = [];
-
-            list.className = "table-value-list";
-            selectionButton.className = "selected-tables-button";
-            selectionButton.type = "button";
-            selectionButton.textContent = "Open selection page";
-            selectionButton.disabled = true;
-
-            function getSelectedTables() {
-                return rowCheckboxes
-                    .filter((checkbox) => checkbox.checked)
-                    .map((checkbox) => checkbox.dataset.tableName);
-            }
-
-            function syncAllCheckbox() {
-                const checkedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
-                allCheckbox.checked = checkedCount === rowCheckboxes.length;
-                allCheckbox.indeterminate = checkedCount > 0 && checkedCount < rowCheckboxes.length;
-                selectionButton.disabled = checkedCount === 0;
-            }
-
-            tables.forEach((table) => {
-                const row = document.createElement("article");
-                const checkboxLabel = document.createElement("label");
-                const checkbox = document.createElement("input");
-                const tableName = document.createElement("span");
-                const tableDisplayName = table.name || "Unnamed table";
-
-                row.className = "table-value-row";
-                checkboxLabel.className = "table-value-option";
-                checkbox.type = "checkbox";
-                checkbox.dataset.tableName = tableDisplayName;
-                tableName.textContent = tableDisplayName;
-
-                checkbox.addEventListener("change", syncAllCheckbox);
-
-                rowCheckboxes.push(checkbox);
-                checkboxLabel.append(checkbox, tableName);
-                row.append(checkboxLabel);
-                list.append(row);
-            });
-
-            allCheckbox.addEventListener("change", () => {
-                const shouldSelectTables = allCheckbox.checked;
-
-                rowCheckboxes.forEach((checkbox) => {
-                    checkbox.checked = shouldSelectTables;
-                    checkbox.dispatchEvent(new Event("change"));
-                });
-                allCheckbox.indeterminate = false;
-            });
 
             selectionButton.addEventListener("click", () => {
-                const selectedTables = getSelectedTables();
-                if (selectedTables.length) {
-                    const displayedTables = rowCheckboxes.map((checkbox) => checkbox.dataset.tableName);
-                    openSelectedTablesPage(selectedTables, asset, displayedTables);
-                }
+                openSelectedTablesPage([], asset, displayedTables);
             });
 
-            section.append(list, selectionButton);
+            section.append(selectionButton);
             detailTables.append(section);
         }
 
@@ -518,7 +452,6 @@
             detailName.textContent = asset.name || "Unnamed asset";
             detailTable.replaceChildren();
             detailTables.replaceChildren();
-            detailMetricsBar.open = false;
             detailMetricsCount.textContent = `${metricRows.length} fields`;
             metricRows.forEach(([label, value]) => addDetailRow(detailTable, label, value));
             renderTableValues(asset.tables, asset);

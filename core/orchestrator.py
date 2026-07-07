@@ -3,7 +3,7 @@
 from core.auth import build_user, get_azure_cli_account, get_fabric_access_token, get_power_bi_access_token
 from core.fabric_client import FabricClient
 from core.powerbi_client import PowerBIClient
-from core.semantic_model import get_power_bi_asset_details
+from core.semantic_model import get_advanced_table_metadata, get_power_bi_asset_details
 
 
 def create_power_bi_client():
@@ -34,3 +34,10 @@ def get_asset_details(workspace_id, category, asset_id):
     power_bi_client = create_power_bi_client()
     fabric_client = create_fabric_client()
     return get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, category, asset_id)
+
+
+def get_advanced_table_details(workspace_id, model_id, selected_tables, all_tables=None):
+    """Return advanced metadata for the currently selected semantic model tables."""
+    power_bi_client = create_power_bi_client()
+    fabric_client = create_fabric_client()
+    return get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, model_id, selected_tables, all_tables)

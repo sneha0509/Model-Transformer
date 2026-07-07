@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from core.normalization import normalize_selected_tables_payload
-from core.orchestrator import get_asset_details, get_login_context, get_workspace_assets
+from core.orchestrator import get_advanced_table_details, get_asset_details, get_login_context, get_workspace_assets
 from core.presets import (
     delete_preset as delete_saved_preset,
     list_presets as list_saved_presets,
@@ -157,6 +157,28 @@ def asset_details(workspace_id, category, asset_id):
         return jsonify({"message": message}), status_code
     except requests.RequestException as exc:
         return jsonify({"message": f"Could not reach the Power BI API. {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"message": str(exc)}), 401
+
+    return jsonify(details)
+
+
+@model_transformer.post("/api/workspaces/<workspace_id>/models/<model_id>/advanced-table-data")
+def advanced_table_data(workspace_id, model_id):
+    payload = get_request_payload()
+    selected_tables = payload.get("selectedTables") if isinstance(payload, dict) else []
+    all_tables = payload.get("allTables") if isinstance(payload, dict) else []
+
+    try:
+        details = get_advanced_table_details(workspace_id, model_id, selected_tables, all_tables)
+    except (ClientAuthenticationError, CredentialUnavailableError) as exc:
+        return jsonify({"message": f"Azure CLI authentication failed. Run az login, then try again. {exc}"}), 401
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        message = "Could not fetch advanced table data for this semantic model. Confirm this account can query the model."
+        return jsonify({"message": message}), status_code
+    except requests.RequestException as exc:
+        return jsonify({"message": f"Could not reach the Power BI or Fabric API. {exc}"}), 502
     except RuntimeError as exc:
         return jsonify({"message": str(exc)}), 401
 

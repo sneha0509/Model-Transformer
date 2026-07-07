@@ -1,5 +1,9 @@
 """Power BI REST client for workspace, report, and semantic model discovery."""
 
+import io
+from datetime import date, datetime
+from decimal import Decimal
+
 import requests
 
 from core.normalization import normalize_model, normalize_report, normalize_workspace
@@ -60,6 +64,21 @@ class PowerBIClient:
         except requests.HTTPError:
             return None
 
+    def post_arrow(self, url, payload):
+        """Perform a POST request and return an Apache Arrow response body."""
+        response = requests.post(
+            url,
+            headers={
+                **self.headers,
+                "Content-Type": "application/json",
+                "Accept": "application/vnd.apache.arrow.stream",
+            },
+            json=payload,
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.content
+
     def workspace_url(self, workspace_id):
         """Build the base URL for a Power BI workspace."""
         return POWER_BI_GROUP_URL.format(workspace_id=workspace_id)
@@ -113,11 +132,71 @@ class PowerBIClient:
 
     def execute_dax_query(self, workspace_id, dataset_id, query):
         """Run a DAX query against a semantic model when the endpoint is available."""
-        payload = {
-            "queries": [{"query": query}],
-            "serializerSettings": {"includeNulls": True},
-        }
-        return self.post_json_or_none(
+        try:
+            return self.post_json(
+                f"{self.workspace_url(workspace_id)}/datasets/{dataset_id}/executeQueries",
+                {
+                    "queries": [{"query": query}],
+                    "serializerSettings": {"includeNulls": True},
+                },
+            )
+        except (requests.HTTPError, RuntimeError):
+            return None
+
+    def execute_dax_query_required(self, workspace_id, dataset_id, query):
+        """Run a DAX query and surface API errors to the caller."""
+        return self.post_json(
             f"{self.workspace_url(workspace_id)}/datasets/{dataset_id}/executeQueries",
-            payload,
+            {
+                "queries": [{"query": query}],
+                "serializerSettings": {"includeNulls": True},
+            },
         )
+
+    def parse_dax_arrow_response(self, content):
+        """Convert executeDaxQueries Arrow streams to the row shape used by the app."""
+        try:
+            import pyarrow as pa
+        except ImportError as exc:
+            raise RuntimeError("pyarrow is required to read executeDaxQueries responses.") from exc
+
+        stream = io.BytesIO(content or b"")
+        tables = []
+
+        while stream.tell() < len(content or b""):
+            try:
+                reader = pa.ipc.open_stream(stream)
+                arrow_table = reader.read_all()
+            except pa.ArrowInvalid:
+                break
+
+            metadata = {
+                key.decode(): value.decode()
+                for key, value in (reader.schema.metadata or {}).items()
+            }
+            if metadata.get("IsError") == "true":
+                raise RuntimeError(
+                    f"DAX query error [{metadata.get('FaultCode')}]: {metadata.get('FaultString')}"
+                )
+
+            tables.append({
+                "rows": [
+                    {
+                        column: self.serialize_dax_arrow_value(value)
+                        for column, value in row.items()
+                    }
+                    for row in arrow_table.to_pylist()
+                ],
+            })
+
+        return {"results": [{"tables": tables}]}
+
+    def serialize_dax_arrow_value(self, value):
+        """Convert Arrow scalar values to JSON/template-friendly Python values."""
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return value

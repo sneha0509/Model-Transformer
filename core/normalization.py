@@ -150,6 +150,36 @@ def normalize_table_names(tables):
     return normalized_tables
 
 
+def normalize_selected_table_details(payload, selected_tables):
+    """Return saved advanced metadata keyed to currently selected tables."""
+    payload = payload if isinstance(payload, dict) else {}
+    detail_sources = []
+    if isinstance(payload.get("selectedTableDetails"), list):
+        detail_sources.extend(payload.get("selectedTableDetails"))
+    if isinstance(payload.get("selectedTables"), list):
+        detail_sources.extend(table for table in payload.get("selectedTables") if isinstance(table, dict))
+
+    details_by_name = {}
+    for detail in detail_sources:
+        if not isinstance(detail, dict):
+            continue
+
+        table_name = get_table_name(detail)
+        if not table_name or table_name not in selected_tables:
+            continue
+
+        details_by_name[table_name] = {
+            "name": table_name,
+            "rowCount": detail.get("rowCount"),
+            "columnCount": detail.get("columnCount"),
+            "partitionCount": detail.get("partitionCount"),
+            "relationshipCount": detail.get("relationshipCount"),
+            "relatedTables": detail.get("relatedTables") if isinstance(detail.get("relatedTables"), list) else [],
+        }
+
+    return [details_by_name[table_name] for table_name in selected_tables if table_name in details_by_name]
+
+
 def normalize_selected_tables_payload(payload):
     """Normalize the payload saved after the user selects tables for a preset."""
     payload = payload if isinstance(payload, dict) else {}
@@ -183,6 +213,7 @@ def normalize_selected_tables_payload(payload):
     user_tenant_id = str(user.get("tenantId") or "")
 
     saved_batches = normalize_saved_batches_payload(payload)
+    selected_table_details = normalize_selected_table_details(payload, normalized_selected_tables)
 
     return {
         "presetId": str(payload.get("presetId") or payload.get("id") or ""),
@@ -191,8 +222,10 @@ def normalize_selected_tables_payload(payload):
         "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
         "modelName": str(payload.get("modelName") or "Unavailable"),
         "modelId": str(payload.get("modelId") or "Unavailable"),
+        "datasetId": str(payload.get("datasetId") or ""),
         "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
         "selectedTables": normalized_selected_tables,
+        "selectedTableDetails": selected_table_details,
         "allTables": normalized_all_tables,
         "unselectedTables": normalized_unselected_tables,
         "batchCreationSettings": saved_batches["batchCreationSettings"],
@@ -296,8 +329,10 @@ def normalize_saved_batches_payload(payload):
         "workspaceId": str(payload.get("workspaceId") or "Unavailable"),
         "modelName": str(payload.get("modelName") or "Unavailable"),
         "modelId": str(payload.get("modelId") or "Unavailable"),
+        "datasetId": str(payload.get("datasetId") or ""),
         "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
         "selectedTables": selected_tables,
+        "selectedTableDetails": normalize_selected_table_details(payload, selected_tables),
         "allTables": all_tables,
         "unselectedTables": unselected_tables,
         "unassignedTables": unassigned_tables,

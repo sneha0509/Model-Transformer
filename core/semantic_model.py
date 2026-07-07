@@ -30,6 +30,22 @@ ORDER BY [Name]
 """.strip()
 
 
+RELATIONSHIP_METADATA_DAX_QUERY = """
+EVALUATE
+SELECTCOLUMNS(
+    INFO.VIEW.RELATIONSHIPS(),
+    "FromTable", [FromTable],
+    "FromColumn", [FromColumn],
+    "FromCardinality", [FromCardinality],
+    "ToTable", [ToTable],
+    "ToColumn", [ToColumn],
+    "ToCardinality", [ToCardinality],
+    "IsActive", [IsActive]
+)
+ORDER BY [FromTable], [ToTable]
+""".strip()
+
+
 def get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, category, asset_id):
     """Fetch and enrich details for either a report or a semantic model asset."""
     normalized_category = category.lower()
@@ -44,6 +60,151 @@ def get_power_bi_asset_details(power_bi_client, fabric_client, workspace_id, cat
     dataset = power_bi_client.get_dataset(workspace_id, asset_id)
     semantic_metadata = get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, asset_id, dataset)
     return build_model_details(dataset, semantic_metadata, workspace_id)
+
+
+def get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, dataset_id, selected_tables, all_tables=None):
+    """Return row counts and definition metadata for selected semantic model tables."""
+    selected_table_names = normalize_table_name_list(selected_tables)
+    visible_table_names = normalize_table_name_list(all_tables)
+
+    if not selected_table_names:
+        return {"tables": []}
+
+    definition_metadata = get_fabric_definition_metadata(fabric_client, workspace_id, dataset_id)
+    definition_tables = {
+        table.get("name"): table
+        for table in definition_metadata.get("tables", [])
+        if table.get("name")
+    }
+    row_counts = get_table_row_counts(power_bi_client, workspace_id, dataset_id, selected_table_names)
+    relationships_by_table = get_table_relationship_metadata(
+        power_bi_client,
+        workspace_id,
+        dataset_id,
+        selected_table_names,
+        visible_table_names or selected_table_names,
+    )
+
+    tables = []
+    for table_name in selected_table_names:
+        definition_table = definition_tables.get(table_name) or {}
+        relationship_summary = relationships_by_table.get(table_name) or {"relationshipCount": 0, "relatedTables": []}
+        tables.append({
+            "name": table_name,
+            "rowCount": row_counts.get(table_name),
+            "columnCount": definition_table.get("columnCount", 0),
+            "partitionCount": definition_table.get("partitionCount", 0),
+            "relationshipCount": relationship_summary.get("relationshipCount", 0),
+            "relatedTables": relationship_summary.get("relatedTables", []),
+        })
+
+    return {"tables": tables}
+
+
+def normalize_table_name_list(tables):
+    """Return unique non-empty table names from UI table payloads."""
+    table_names = []
+    for table in tables if isinstance(tables, list) else []:
+        table_name = str(table.get("name") if isinstance(table, dict) else table or "").strip()
+        if table_name and table_name not in table_names:
+            table_names.append(table_name)
+
+    return table_names
+
+
+def get_table_row_counts(power_bi_client, workspace_id, dataset_id, table_names):
+    """Run isolated DAX row-count queries so one inaccessible table does not hide all results."""
+    row_counts = {}
+
+    for table_name in table_names:
+        query = f"EVALUATE ROW(\"RowCount\", COUNTROWS({format_dax_table_name(table_name)}))"
+        result = power_bi_client.execute_dax_query(workspace_id, dataset_id, query)
+        rows = (((result or {}).get("results") or [{}])[0].get("tables") or [{}])[0].get("rows") or []
+        if not rows:
+            row_counts[table_name] = None
+            continue
+
+        row_count = get_dax_row_value(rows[0], "RowCount")
+        try:
+            row_counts[table_name] = int(float(row_count))
+        except (TypeError, ValueError):
+            row_counts[table_name] = None
+
+    return row_counts
+
+
+def get_table_relationship_metadata(power_bi_client, workspace_id, dataset_id, selected_table_names, visible_table_names=None):
+    """Return relationship counts and related tables for selected semantic model tables."""
+    result = power_bi_client.execute_dax_query(workspace_id, dataset_id, RELATIONSHIP_METADATA_DAX_QUERY)
+    rows = get_dax_result_rows(result)
+    selected_lookup = {normalize_table_lookup_key(table_name): table_name for table_name in selected_table_names}
+    visible_lookup = {normalize_table_lookup_key(table_name) for table_name in (visible_table_names or [])}
+    relationships_by_table = {table_name: {} for table_name in selected_table_names}
+
+    for row in rows:
+        from_table = get_dax_row_value(row, "FromTable")
+        to_table = get_dax_row_value(row, "ToTable")
+        from_selected = selected_lookup.get(normalize_table_lookup_key(from_table))
+        to_selected = selected_lookup.get(normalize_table_lookup_key(to_table))
+
+        if from_selected and to_table and table_is_visible(to_table, visible_lookup):
+            add_related_table(relationships_by_table[from_selected], from_table, to_table, row)
+        if to_selected and from_table and table_is_visible(from_table, visible_lookup):
+            add_related_table(relationships_by_table[to_selected], to_table, from_table, row)
+
+    summaries = {}
+    for table_name, related_tables in relationships_by_table.items():
+        related_table_list = sorted(related_tables.values(), key=lambda item: item["name"].casefold())
+        relationship_count = sum(len(related_table.get("relationships", [])) for related_table in related_table_list)
+        summaries[table_name] = {
+            "relationshipCount": relationship_count,
+            "relatedTables": related_table_list,
+        }
+
+    return summaries
+
+
+def table_is_visible(table_name, visible_lookup):
+    """Return whether a related table belongs to the original visible table list."""
+    return not visible_lookup or normalize_table_lookup_key(table_name) in visible_lookup
+
+
+def add_related_table(related_tables, source_table, related_table, row):
+    """Append a relationship row to a related-table summary."""
+    related_table_name = str(related_table or "").strip()
+    if not related_table_name:
+        return
+
+    related_summary = related_tables.setdefault(related_table_name, {
+        "name": related_table_name,
+        "relationships": [],
+    })
+    related_summary["relationships"].append({
+        "fromTable": get_dax_row_value(row, "FromTable"),
+        "fromColumn": get_dax_row_value(row, "FromColumn"),
+        "fromCardinality": get_dax_row_value(row, "FromCardinality"),
+        "toTable": get_dax_row_value(row, "ToTable"),
+        "toColumn": get_dax_row_value(row, "ToColumn"),
+        "toCardinality": get_dax_row_value(row, "ToCardinality"),
+        "isActive": get_dax_bool_value(row, "IsActive"),
+        "direction": "from" if source_table == get_dax_row_value(row, "FromTable") else "to",
+    })
+
+
+def get_dax_result_rows(result):
+    """Return rows from the first table in a parsed executeQueries response."""
+    return (((result or {}).get("results") or [{}])[0].get("tables") or [{}])[0].get("rows") or []
+
+
+def normalize_table_lookup_key(table_name):
+    """Normalize table names for case-insensitive relationship matching."""
+    return str(table_name or "").strip().casefold()
+
+
+def format_dax_table_name(table_name):
+    """Format a semantic model table name for use in a quoted DAX table reference."""
+    escaped_name = str(table_name or "").replace("'", "''")
+    return f"'{escaped_name}'"
 
 
 def get_semantic_model_metadata(power_bi_client, fabric_client, workspace_id, dataset_id, dataset):
@@ -93,6 +254,7 @@ def get_dax_table_metadata(power_bi_client, workspace_id, dataset_id):
         tables.append({
             "name": table_name,
             "isHidden": get_dax_bool_value(row, "IsHidden"),
+            "columnCount": 0,
             "partitionCount": 0,
             "hasPartitions": False,
         })
@@ -132,9 +294,11 @@ def enrich_dax_table_metadata(dax_tables, definition_metadata):
     enriched_tables = []
     for table in dax_tables:
         definition_table = definition_tables.get(table.get("name")) or {}
+        column_count = definition_table.get("columnCount", table.get("columnCount", 0))
         partition_count = definition_table.get("partitionCount", table.get("partitionCount", 0))
         enriched_tables.append({
             **table,
+            "columnCount": column_count,
             "partitionCount": partition_count,
             "hasPartitions": partition_count > 0,
         })
@@ -194,8 +358,14 @@ def parse_fabric_definition(result):
             continue
 
         table_name = path.rsplit("/", 1)[-1].removesuffix(".tmdl")
+        column_count = sum(1 for line in text.splitlines() if line.lstrip().startswith("column "))
         partition_count = sum(1 for line in text.splitlines() if line.lstrip().startswith("partition "))
-        tables.append({"name": table_name, "partitionCount": partition_count, "hasPartitions": partition_count > 0})
+        tables.append({
+            "name": table_name,
+            "columnCount": column_count,
+            "partitionCount": partition_count,
+            "hasPartitions": partition_count > 0,
+        })
 
     return {"tables": tables, "source": "Fabric definition"} if tables else {}
 
