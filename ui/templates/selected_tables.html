@@ -15,7 +15,7 @@
 {% block app_content %}
             <div class="selection-page">
                 <div class="selection-nav">
-                    <a class="back-home-link" href="/">&#8592; Back to home</a>
+                    <a class="back-home-link" id="backHomeLink" href="/">&#8592; Back to home</a>
                 </div>
 
                 <section class="selection-header selection-details-section" aria-label="Model details">
@@ -98,7 +98,7 @@
                             <h2 id="startModelRefreshTitle">Start Model Refresh</h2>
                             <small>Execute the batch sequence below, completing each batch before progressing to the next.</small>
                         </div>
-                        <button class="model-table-refresh-button" id="startModelRefreshButton" type="button">Start Model Refresh</button>
+                        <button class="model-table-refresh-button" id="startModelRefreshButton" type="button" disabled>Start Model Refresh</button>
                     </section>
                 </section>
 
@@ -111,13 +111,22 @@
 
                 <section class="batch-workspace" aria-label="Table batches">
                     <div class="table-panel-stack">
-                        <section class="table-source-panel selected-table-panel" aria-labelledby="selectedTablesTitle">
-                            <div class="batch-panel-heading">
+                        <details class="table-source-panel selected-table-panel table-collapsible-panel" aria-labelledby="selectedTablesTitle" open>
+                            <summary class="batch-panel-heading table-panel-summary">
                                 <div>
-                                    <p class="eyebrow">Table name</p>
                                     <h2 id="selectedTablesTitle">Selected tables</h2>
                                 </div>
-                            </div>
+                                <span class="table-panel-state" aria-hidden="true">
+                                    <span class="table-panel-state-text">
+                                        <span class="table-panel-state-label table-panel-state-label-open">Expanded</span>
+                                        <span class="table-panel-state-label table-panel-state-label-closed">Collapsed</span>
+                                    </span>
+                                    <span class="table-panel-motion">
+                                        <span class="table-panel-motion-chevron"></span>
+                                    </span>
+                                </span>
+                                <span class="sr-only">Toggle selected tables panel</span>
+                            </summary>
 
                             <div class="table-transfer-section">
                                 <label class="search-field table-search-field" for="selectedTableSearch">
@@ -139,15 +148,24 @@
                                     {% endfor %}
                                 </div>
                             </div>
-                        </section>
+                        </details>
 
-                        <section class="table-source-panel unselected-table-panel" aria-labelledby="unselectedTablesTitle">
-                            <div class="batch-panel-heading">
+                        <details class="table-source-panel unselected-table-panel table-collapsible-panel" aria-labelledby="unselectedTablesTitle" open>
+                            <summary class="batch-panel-heading table-panel-summary">
                                 <div>
-                                    <p class="eyebrow">Table name</p>
-                                    <h2 id="unselectedTablesTitle">Unselected-tables</h2>
+                                    <h2 id="unselectedTablesTitle">Unselected tables</h2>
                                 </div>
-                            </div>
+                                <span class="table-panel-state" aria-hidden="true">
+                                    <span class="table-panel-state-text">
+                                        <span class="table-panel-state-label table-panel-state-label-open">Expanded</span>
+                                        <span class="table-panel-state-label table-panel-state-label-closed">Collapsed</span>
+                                    </span>
+                                    <span class="table-panel-motion">
+                                        <span class="table-panel-motion-chevron"></span>
+                                    </span>
+                                </span>
+                                <span class="sr-only">Toggle unselected tables panel</span>
+                            </summary>
 
                             <div class="table-transfer-section" id="unselectedTablesContent">
                                 <label class="search-field table-search-field" for="unselectedTableSearch">
@@ -163,7 +181,7 @@
                                     {% endfor %}
                                 </div>
                             </div>
-                        </section>
+                        </details>
                     </div>
 
                     <div class="batch-list-panel" aria-labelledby="batchesTitle">
@@ -222,6 +240,13 @@
                 </section>
             </div>
 
+            <div class="loading-popup" id="loadingPopup" role="status" aria-live="polite" aria-modal="true" hidden>
+                <div class="loading-popup-card">
+                    <div class="loading-popup-spinner" aria-hidden="true"></div>
+                    <strong id="loadingPopupLabel">Loading...</strong>
+                </div>
+            </div>
+
             <dialog class="related-tables-dialog" id="relatedTablesDialog" aria-labelledby="relatedTablesDialogTitle">
                 <div class="related-dialog-inner">
                     <div class="dialog-head">
@@ -248,16 +273,20 @@
         const maxParallelismInput = document.getElementById("maxParallelismInput");
         const retryCountInput = document.getElementById("retryCountInput");
         const commitModeInputs = Array.from(document.querySelectorAll("input[name='commitMode']"));
+        const backHomeLink = document.getElementById("backHomeLink");
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
         const presetNameInput = document.getElementById("presetNameInput");
         const createPresetButton = document.getElementById("createPresetButton");
         const processTablesButton = document.getElementById("processTablesButton");
+        const startModelRefreshButton = document.getElementById("startModelRefreshButton");
         const refreshModelTablesButton = document.getElementById("refreshModelTablesButton");
         const actionOutputBar = document.getElementById("actionOutputBar");
         const refreshModelTablesStatus = document.getElementById("refreshModelTablesStatus");
         const fetchAdvanceDataButton = document.getElementById("fetchAdvanceDataButton");
         const fetchAdvanceDataStatus = document.getElementById("fetchAdvanceDataStatus");
+        const loadingPopup = document.getElementById("loadingPopup");
+        const loadingPopupLabel = document.getElementById("loadingPopupLabel");
         const relatedTablesDialog = document.getElementById("relatedTablesDialog");
         const relatedTablesDialogTitle = document.getElementById("relatedTablesDialogTitle");
         const relatedTablesDialogBody = document.getElementById("relatedTablesDialogBody");
@@ -266,6 +295,46 @@
         const canOverwritePreset = processTablesButton.dataset.canOverwritePreset === "true";
 
         let draggedTable = null;
+        let selectedActionButtonLock = null;
+
+        function getSelectedPageButtons() {
+            return Array.from(document.querySelectorAll("button"));
+        }
+
+        function lockRestButtons(activeButton) {
+            selectedActionButtonLock = activeButton;
+            getSelectedPageButtons().forEach((button) => {
+                button.disabled = button !== activeButton;
+            });
+            backHomeLink.classList.add("is-disabled");
+            backHomeLink.setAttribute("aria-disabled", "true");
+            backHomeLink.tabIndex = -1;
+        }
+
+        function restoreMainActionButtons() {
+            selectedActionButtonLock = null;
+            getSelectedPageButtons().forEach((button) => {
+                button.disabled = false;
+            });
+            backHomeLink.classList.remove("is-disabled");
+            backHomeLink.removeAttribute("aria-disabled");
+            backHomeLink.removeAttribute("tabindex");
+            updateBatchCounts();
+            syncTableListEmptyStates();
+        }
+
+        async function runWithRestButtonsLocked(activeButton, action) {
+            if (!activeButton || activeButton.disabled || selectedActionButtonLock) {
+                return;
+            }
+
+            lockRestButtons(activeButton);
+            try {
+                await action();
+            } finally {
+                restoreMainActionButtons();
+            }
+        }
 
         function getTableItems() {
             return Array.from(tableSourceList.querySelectorAll(".table-drag-item"));
@@ -289,6 +358,21 @@
 
         function getBatchTitle(batchNumber) {
             return `Batch ${batchNumber}`;
+        }
+
+        function formatBatchAssignmentPreview(batches) {
+            const batchLabels = batches.map(({batchLabel}) => batchLabel);
+            const visibleBatchLabels = batchLabels.slice(0, 3).join(",");
+
+            if (batchLabels.length <= 3) {
+                return visibleBatchLabels;
+            }
+
+            return `${visibleBatchLabels} and ${batchLabels.length - 3} more`;
+        }
+
+        function formatBatchAssignmentTitle(batches) {
+            return batches.map(({batchLabel}) => batchLabel).join(",");
         }
 
         function normalizeTableSearchValue(value) {
@@ -369,7 +453,17 @@
                     removeButton.disabled = batchCards.length === 1;
                 }
             });
+            updateStartModelRefreshState();
             updateTableBatchLabels();
+            if (selectedActionButtonLock) {
+                lockRestButtons(selectedActionButtonLock);
+            }
+        }
+
+        function updateStartModelRefreshState() {
+            startModelRefreshButton.disabled = selectedActionButtonLock
+                ? startModelRefreshButton !== selectedActionButtonLock
+                : document.querySelectorAll(".batch-table-item").length === 0;
         }
 
         function getBatchName(batchCard) {
@@ -429,13 +523,26 @@
             actionOutputBar.hidden = !hasOutput;
         }
 
+        function showLoadingPopup(message) {
+            loadingPopupLabel.textContent = message;
+            loadingPopup.hidden = false;
+        }
+
+        function hideLoadingPopup() {
+            loadingPopup.hidden = true;
+        }
+
         function setFetchAdvanceDataStatus(message, tone = "") {
+            refreshModelTablesStatus.textContent = "";
+            refreshModelTablesStatus.dataset.tone = "";
             fetchAdvanceDataStatus.textContent = message;
             fetchAdvanceDataStatus.dataset.tone = tone;
             updateActionOutputVisibility();
         }
 
         function setRefreshModelTablesStatus(message, tone = "") {
+            fetchAdvanceDataStatus.textContent = "";
+            fetchAdvanceDataStatus.dataset.tone = "";
             refreshModelTablesStatus.textContent = message;
             refreshModelTablesStatus.dataset.tone = tone;
             updateActionOutputVisibility();
@@ -559,6 +666,8 @@
                 relatedAction,
             );
             advancedData.hidden = false;
+            tableItem.classList.add("has-advanced-data");
+            tableSourceList.classList.add("has-advanced-data");
         }
 
         function updateSelectedTableAdvancedData(tableData) {
@@ -597,22 +706,25 @@
 
             if (!isSelected) {
                 return {
-                    selectedLabel: "Not selected",
-                    batchLabel: "Not in selected list",
+                    selectedLabel: "Not Selected",
+                    batchLabel: "Not Selected",
+                    batchTitle: "Not Selected",
                     batchTone: "",
                 };
             }
             if (!batches.length) {
                 return {
                     selectedLabel: "Selected",
-                    batchLabel: "No batch",
+                    batchLabel: "Selected",
+                    batchTitle: "Selected",
                     batchTone: "",
                 };
             }
 
             return {
                 selectedLabel: "Selected",
-                batchLabel: batches.map(({batchLabel}) => batchLabel).join(", "),
+                batchLabel: formatBatchAssignmentPreview(batches),
+                batchTitle: formatBatchAssignmentTitle(batches),
                 batchTone: batches[0].batchTone,
             };
         }
@@ -623,16 +735,29 @@
             const toTable = formatAdvancedValue(relationship.toTable, "Unknown");
             const toColumn = formatAdvancedValue(relationship.toColumn, "Column");
             const cardinalityLabel = formatRelationshipCardinality(relationship);
-            const activeLabel = relationship.isActive ? "Active" : "Inactive";
 
-            return `${fromTable}[${fromColumn}] -> ${toTable}[${toColumn}] (${cardinalityLabel}, ${activeLabel})`;
+            return `${fromTable}[${fromColumn}] -> ${toTable}[${toColumn}] · Cardinality: ${cardinalityLabel}`;
+        }
+
+        function getRelationshipActivityState(relationship) {
+            return relationship && relationship.isActive ? "active" : "inactive";
+        }
+
+        function createRelationshipActivityBadge(relationship) {
+            const activityState = getRelationshipActivityState(relationship);
+            const activityBadge = document.createElement("span");
+
+            activityBadge.className = "related-activity-badge";
+            activityBadge.dataset.state = activityState;
+            activityBadge.textContent = activityState === "active" ? "Active" : "Inactive";
+            return activityBadge;
         }
 
         function formatCardinalityValue(value) {
             const normalizedValue = String(value || "").trim().toLocaleLowerCase();
 
             if (["one", "1", "single"].includes(normalizedValue)) {
-                return "1";
+                return "one";
             }
             if (["many", "*", "n"].includes(normalizedValue)) {
                 return "many";
@@ -645,20 +770,62 @@
             return `${formatCardinalityValue(relationship.fromCardinality)} to ${formatCardinalityValue(relationship.toCardinality)}`;
         }
 
-        function summarizeRelationshipDetails(relationships) {
-            const cardinalities = [...new Set(relationships.map(formatRelationshipCardinality))];
-            const activeCount = relationships.filter((relationship) => relationship.isActive).length;
-            const activeSummary = activeCount === relationships.length
-                ? "all active"
-                : activeCount === 0 ? "all inactive" : `${activeCount} active`;
+        function createRelationshipDetailList(relationships) {
+            const detailList = document.createElement("div");
 
-            return `${relationships.length} relationships · ${cardinalities.join(", ")} · ${activeSummary}`;
+            detailList.className = "related-relationship-list";
+            if (!relationships.length) {
+                const emptyDetail = document.createElement("span");
+
+                emptyDetail.className = "related-table-detail";
+                emptyDetail.textContent = "No relationship metadata returned.";
+                detailList.append(emptyDetail);
+                return detailList;
+            }
+
+            relationships.forEach((relationship, index) => {
+                const detailItem = document.createElement("div");
+                const detailText = document.createElement("span");
+
+                detailItem.className = "related-relationship-item";
+                detailText.className = "related-table-detail";
+                detailText.textContent = relationships.length > 1
+                    ? `Relationship ${index + 1}: ${formatRelationshipDetail(relationship)}`
+                    : formatRelationshipDetail(relationship);
+                detailItem.append(createRelationshipActivityBadge(relationship), detailText);
+                detailList.append(detailItem);
+            });
+
+            return detailList;
         }
 
         function openRelatedTablesDialog(tableItem) {
             const tableName = getTableName(tableItem);
             const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableItem.dataset.relatedTables));
             const hasRelationshipData = tableItem.dataset.relationshipsLoaded === "true";
+
+            function updateRelatedRowState(relatedTableName, selectedBadge, batchBadge) {
+                const state = getTableSelectionState(relatedTableName);
+                const isSelected = state.selectedLabel === "Selected";
+                const selectionState = isSelected ? "selected" : "unselected";
+
+                selectedBadge.dataset.state = selectionState;
+                selectedBadge.textContent = isSelected ? "-" : "+";
+                selectedBadge.dataset.relatedTableAction = isSelected ? "remove" : "add";
+                selectedBadge.setAttribute(
+                    "aria-label",
+                    `${isSelected ? "Remove" : "Add"} ${relatedTableName} ${isSelected ? "from" : "to"} selected tables`,
+                );
+                batchBadge.dataset.state = selectionState;
+                batchBadge.textContent = state.batchLabel;
+                batchBadge.title = state.batchTitle;
+                batchBadge.setAttribute("aria-label", `Batch assignments: ${state.batchTitle}`);
+                if (state.batchTone) {
+                    batchBadge.dataset.batchTone = state.batchTone;
+                } else {
+                    delete batchBadge.dataset.batchTone;
+                }
+            }
 
             relatedTablesDialogTitle.textContent = `Related tables for ${tableName}`;
             relatedTablesDialogBody.replaceChildren();
@@ -687,28 +854,38 @@
             relatedTables.forEach((relatedTable) => {
                 const state = getTableSelectionState(relatedTable.name);
                 const row = document.createElement("article");
+                const tableIdentity = document.createElement("div");
                 const tableNameLabel = document.createElement("strong");
-                const relationshipDetail = document.createElement("span");
-                const selectedBadge = document.createElement("span");
+                const relationshipDetail = document.createElement("div");
+                const selectedBadge = document.createElement("button");
                 const batchBadge = document.createElement("span");
                 const relationships = parseRelatedTables(relatedTable.relationships);
+                const relatedTableName = String(relatedTable.name || "").trim();
 
                 row.className = "related-table-row";
-                tableNameLabel.textContent = relatedTable.name;
-                relationshipDetail.className = "related-table-detail";
-                relationshipDetail.textContent = relationships.length === 1
-                    ? formatRelationshipDetail(relationships[0])
-                    : summarizeRelationshipDetails(relationships);
-                selectedBadge.className = "related-table-badge";
-                selectedBadge.dataset.state = state.selectedLabel === "Selected" ? "selected" : "unselected";
-                selectedBadge.textContent = state.selectedLabel;
+                tableIdentity.className = "related-table-identity";
+                tableNameLabel.textContent = relatedTableName;
+                relationshipDetail.className = "related-table-relationships";
+                relationshipDetail.append(createRelationshipDetailList(relationships));
+                selectedBadge.className = "related-table-badge related-table-selection-toggle";
+                selectedBadge.type = "button";
+                selectedBadge.addEventListener("click", () => {
+                    if (selectedBadge.dataset.relatedTableAction === "remove") {
+                        removeRelatedTableFromSelected(relatedTableName);
+                    } else {
+                        addRelatedTableToSelected(relatedTableName);
+                    }
+                    updateRelatedRowState(relatedTableName, selectedBadge, batchBadge);
+                });
                 batchBadge.className = "related-table-badge related-table-batch table-batch-chip";
                 if (state.batchTone) {
                     batchBadge.dataset.batchTone = state.batchTone;
                 }
                 batchBadge.textContent = state.batchLabel;
+                updateRelatedRowState(relatedTableName, selectedBadge, batchBadge);
 
-                row.append(tableNameLabel, relationshipDetail, selectedBadge, batchBadge);
+                tableIdentity.append(tableNameLabel);
+                row.append(tableIdentity, relationshipDetail, batchBadge, selectedBadge);
                 list.append(row);
             });
 
@@ -731,6 +908,61 @@
             }));
         }
 
+        function updateBatchScrollControls(label) {
+            const viewport = label.querySelector(".table-batch-scroll-viewport");
+            const leftButton = label.querySelector("[data-scroll-direction='left']");
+            const rightButton = label.querySelector("[data-scroll-direction='right']");
+
+            if (!viewport || !leftButton || !rightButton) {
+                return;
+            }
+
+            const maximumScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+            const hasOverflow = maximumScroll > 1;
+            leftButton.hidden = !hasOverflow;
+            rightButton.hidden = !hasOverflow;
+            leftButton.disabled = !hasOverflow || viewport.scrollLeft <= 1;
+            rightButton.disabled = !hasOverflow || viewport.scrollLeft >= maximumScroll - 1;
+        }
+
+        function ensureBatchScroller(label) {
+            let viewport = label.querySelector(".table-batch-scroll-viewport");
+
+            if (viewport) {
+                return viewport;
+            }
+
+            const existingContent = Array.from(label.childNodes);
+            const leftButton = document.createElement("button");
+            const rightButton = document.createElement("button");
+            viewport = document.createElement("div");
+
+            leftButton.className = "table-batch-scroll-button";
+            leftButton.type = "button";
+            leftButton.dataset.scrollDirection = "left";
+            leftButton.textContent = "\u2039";
+            leftButton.hidden = true;
+            leftButton.setAttribute("aria-label", "Scroll batch assignments left");
+            rightButton.className = "table-batch-scroll-button";
+            rightButton.type = "button";
+            rightButton.dataset.scrollDirection = "right";
+            rightButton.textContent = "\u203a";
+            rightButton.hidden = true;
+            rightButton.setAttribute("aria-label", "Scroll batch assignments right");
+            viewport.className = "table-batch-scroll-viewport";
+            viewport.append(...existingContent);
+            label.replaceChildren(leftButton, viewport, rightButton);
+
+            [leftButton, rightButton].forEach((button) => {
+                button.addEventListener("click", () => {
+                    const direction = button.dataset.scrollDirection === "left" ? -1 : 1;
+                    viewport.scrollBy({left: direction * Math.max(80, viewport.clientWidth * 0.75), behavior: "smooth"});
+                });
+            });
+            viewport.addEventListener("scroll", () => updateBatchScrollControls(label));
+            return viewport;
+        }
+
         function updateTableBatchLabels() {
             getTableItems().forEach((tableItem) => {
                 const label = tableItem.querySelector(".table-batch-label");
@@ -740,14 +972,16 @@
                     return;
                 }
 
-                label.replaceChildren();
+                const viewport = ensureBatchScroller(label);
+                viewport.replaceChildren();
                 label.classList.toggle("has-batches", assignedBatches.length > 0);
                 tableItem.classList.toggle("has-batches", assignedBatches.length > 0);
                 if (!assignedBatches.length) {
                     const emptyLabel = document.createElement("span");
                     emptyLabel.className = "table-batch-empty";
                     emptyLabel.textContent = "No batches assigned";
-                    label.append(emptyLabel);
+                    viewport.append(emptyLabel);
+                    requestAnimationFrame(() => updateBatchScrollControls(label));
                     return;
                 }
 
@@ -757,8 +991,9 @@
                     chip.dataset.batchTone = batchTone;
                     chip.textContent = batchLabel;
                     chip.title = `Batch ${batchNumber}`;
-                    label.append(chip);
+                    viewport.append(chip);
                 });
+                requestAnimationFrame(() => updateBatchScrollControls(label));
             });
         }
 
@@ -771,6 +1006,7 @@
             const unselectedVisibleCount = applyTableSearchFilter(unselectedItems, unselectedTableSearch.value);
 
             tableSourceList.classList.toggle("empty-drop-zone", selectedItems.length === 0 || selectedVisibleCount === 0);
+            tableSourceList.classList.toggle("has-advanced-data", selectedItems.some((item) => item.classList.contains("has-advanced-data")));
             unselectedTableList.classList.toggle("empty-drop-zone", unselectedItems.length === 0 || unselectedVisibleCount === 0);
             if (selectedEmpty) {
                 selectedEmpty.textContent = selectedItems.length === 0 ? "No tables were selected." : "No selected tables match your search.";
@@ -780,8 +1016,11 @@
                 unselectedEmpty.textContent = unselectedItems.length === 0 ? "No unselected tables." : "No unselected tables match your search.";
                 unselectedEmpty.hidden = unselectedItems.length > 0 && unselectedVisibleCount > 0;
             }
-            aiRefreshButton.disabled = selectedItems.length === 0;
-            fetchAdvanceDataButton.disabled = selectedItems.length === 0;
+            aiRefreshButton.disabled = selectedActionButtonLock ? aiRefreshButton !== selectedActionButtonLock : selectedItems.length === 0;
+            fetchAdvanceDataButton.disabled = selectedActionButtonLock ? fetchAdvanceDataButton !== selectedActionButtonLock : selectedItems.length === 0;
+            if (selectedActionButtonLock) {
+                lockRestButtons(selectedActionButtonLock);
+            }
         }
 
         function createSelectedTableItem(tableName) {
@@ -880,6 +1119,38 @@
             syncTableListEmptyStates();
         }
 
+        function addRelatedTableToSelected(tableName) {
+            const normalizedTableName = String(tableName || "").trim();
+
+            if (!normalizedTableName || getTableItems().some((item) => getTableName(item) === normalizedTableName)) {
+                return;
+            }
+
+            const unselectedItem = getUnselectedTableItems().find((item) => getTableName(item) === normalizedTableName);
+            if (unselectedItem) {
+                moveUnselectedTableToSelected(unselectedItem);
+                return;
+            }
+
+            tableSourceList.append(createSelectedTableItem(normalizedTableName));
+            if (Array.isArray(selectionPayload.allTables) && !selectionPayload.allTables.includes(normalizedTableName)) {
+                selectionPayload.allTables.push(normalizedTableName);
+            }
+            updateBatchCounts();
+            syncTableListEmptyStates();
+        }
+
+        function removeRelatedTableFromSelected(tableName) {
+            const normalizedTableName = String(tableName || "").trim();
+            const selectedItem = getTableItems().find((item) => getTableName(item) === normalizedTableName);
+
+            if (!selectedItem) {
+                return;
+            }
+
+            moveSelectedTableToUnselected(selectedItem);
+        }
+
         async function refreshModelTables() {
             const workspaceId = selectionPayload.workspaceId;
             const modelId = selectionPayload.modelId;
@@ -892,7 +1163,9 @@
 
             refreshModelTablesButton.disabled = true;
             refreshModelTablesButton.textContent = "Refreshing...";
-            setRefreshModelTablesStatus("Loading latest tables from the semantic model...");
+            const refreshMessage = "Loading latest tables from the semantic model...";
+            showLoadingPopup(refreshMessage);
+            setRefreshModelTablesStatus(refreshMessage);
 
             try {
                 const response = await fetch(
@@ -929,7 +1202,8 @@
             } catch (error) {
                 setRefreshModelTablesStatus(error.message, "error");
             } finally {
-                refreshModelTablesButton.disabled = false;
+                hideLoadingPopup();
+                refreshModelTablesButton.disabled = selectedActionButtonLock ? refreshModelTablesButton !== selectedActionButtonLock : false;
                 refreshModelTablesButton.textContent = "Refresh tables list from models";
             }
         }
@@ -953,7 +1227,9 @@
 
             fetchAdvanceDataButton.disabled = true;
             fetchAdvanceDataButton.textContent = "Fetching...";
-            setFetchAdvanceDataStatus(`Fetching advanced data for ${selectedTables.length} selected ${selectedTables.length === 1 ? "table" : "tables"}...`);
+            const fetchMessage = `Fetching advanced data for ${selectedTables.length} selected ${selectedTables.length === 1 ? "table" : "tables"}...`;
+            showLoadingPopup(fetchMessage);
+            setFetchAdvanceDataStatus(fetchMessage);
 
             try {
                 const response = await fetch(
@@ -980,7 +1256,8 @@
             } catch (error) {
                 setFetchAdvanceDataStatus(error.message, "error");
             } finally {
-                fetchAdvanceDataButton.disabled = false;
+                hideLoadingPopup();
+                fetchAdvanceDataButton.disabled = selectedActionButtonLock ? fetchAdvanceDataButton !== selectedActionButtonLock : false;
                 fetchAdvanceDataButton.textContent = "Fetch Advance Data";
                 syncTableListEmptyStates();
             }
@@ -1338,9 +1615,10 @@
         updateBatchCounts();
         syncTableListEmptyStates();
 
-        aiRefreshButton.addEventListener("click", distributeTablesAcrossBatches);
-        refreshModelTablesButton.addEventListener("click", refreshModelTables);
-        fetchAdvanceDataButton.addEventListener("click", fetchAdvanceData);
+        aiRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(aiRefreshButton, distributeTablesAcrossBatches));
+        refreshModelTablesButton.addEventListener("click", () => runWithRestButtonsLocked(refreshModelTablesButton, refreshModelTables));
+        fetchAdvanceDataButton.addEventListener("click", () => runWithRestButtonsLocked(fetchAdvanceDataButton, fetchAdvanceData));
+        startModelRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(startModelRefreshButton, () => {}));
         closeRelatedTablesDialogButton.addEventListener("click", () => relatedTablesDialog.close());
         relatedTablesDialog.addEventListener("click", (event) => {
             if (event.target === relatedTablesDialog) {
@@ -1349,6 +1627,9 @@
         });
         selectedTableSearch.addEventListener("input", syncTableListEmptyStates);
         unselectedTableSearch.addEventListener("input", syncTableListEmptyStates);
+        window.addEventListener("resize", () => {
+            document.querySelectorAll(".table-batch-label").forEach(updateBatchScrollControls);
+        });
         addBatchButton.addEventListener("click", () => {
             const batchNumber = getBatchCards().length + 1;
             batchList.append(createBatchCard(batchNumber));
