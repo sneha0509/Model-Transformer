@@ -227,7 +227,7 @@
                                                 <button class="remove-table-assignment-button" type="button" aria-label="Remove {{ table }} from Batch {{ batch_number }}">Remove</button>
                                             </article>
                                         {% endfor %}
-                                        <div class="batch-new-table-ghost">DRAG TO ADD NEW TABLE</div>
+                                        <button class="batch-new-table-ghost batch-table-picker" type="button">Click or Drag to Add Table</button>
                                     </div>
                                 </section>
                             {% endfor %}
@@ -246,6 +246,23 @@
                     <strong id="loadingPopupLabel">Loading...</strong>
                 </div>
             </div>
+
+            <dialog class="batch-table-dialog" id="batchTableDialog" aria-labelledby="batchTableDialogTitle">
+                <div class="batch-table-dialog-inner">
+                    <div class="dialog-head">
+                        <div>
+                            <p class="eyebrow">Batch tables</p>
+                            <h2 id="batchTableDialogTitle">Add tables</h2>
+                        </div>
+                        <button class="close-dialog-btn" id="closeBatchTableDialogButton" type="button" aria-label="Close table picker dialog">&#x2715;</button>
+                    </div>
+                    <div class="batch-table-dialog-options" id="batchTableDialogOptions"></div>
+                    <div class="batch-table-dialog-actions">
+                        <button class="process-tables-button secondary-action-button" id="cancelBatchTableDialogButton" type="button">Cancel</button>
+                        <button class="process-tables-button" id="saveBatchTableDialogButton" type="button">OK</button>
+                    </div>
+                </div>
+            </dialog>
 
             <dialog class="related-tables-dialog" id="relatedTablesDialog" aria-labelledby="relatedTablesDialogTitle">
                 <div class="related-dialog-inner">
@@ -287,6 +304,12 @@
         const fetchAdvanceDataStatus = document.getElementById("fetchAdvanceDataStatus");
         const loadingPopup = document.getElementById("loadingPopup");
         const loadingPopupLabel = document.getElementById("loadingPopupLabel");
+        const batchTableDialog = document.getElementById("batchTableDialog");
+        const batchTableDialogTitle = document.getElementById("batchTableDialogTitle");
+        const batchTableDialogOptions = document.getElementById("batchTableDialogOptions");
+        const closeBatchTableDialogButton = document.getElementById("closeBatchTableDialogButton");
+        const cancelBatchTableDialogButton = document.getElementById("cancelBatchTableDialogButton");
+        const saveBatchTableDialogButton = document.getElementById("saveBatchTableDialogButton");
         const relatedTablesDialog = document.getElementById("relatedTablesDialog");
         const relatedTablesDialogTitle = document.getElementById("relatedTablesDialogTitle");
         const relatedTablesDialogBody = document.getElementById("relatedTablesDialogBody");
@@ -296,6 +319,7 @@
 
         let draggedTable = null;
         let selectedActionButtonLock = null;
+    let activeBatchTablePickerCard = null;
 
         function getSelectedPageButtons() {
             return Array.from(document.querySelectorAll("button"));
@@ -455,6 +479,7 @@
             });
             updateStartModelRefreshState();
             updateTableBatchLabels();
+            syncBatchTablePickers();
             if (selectedActionButtonLock) {
                 lockRestButtons(selectedActionButtonLock);
             }
@@ -1119,6 +1144,165 @@
             syncTableListEmptyStates();
         }
 
+        function isTableAssignedToBatch(tableName, batchCard) {
+            const dropZone = batchCard ? batchCard.querySelector(".batch-drop-zone") : null;
+
+            return Boolean(dropZone) && Array.from(dropZone.querySelectorAll(".batch-table-item"))
+                .some((item) => getTableName(item) === tableName);
+        }
+
+        function removeTableNameFromBatch(tableName, batchCard, shouldUpdate = true) {
+            const dropZone = batchCard ? batchCard.querySelector(".batch-drop-zone") : null;
+
+            if (!dropZone) {
+                return;
+            }
+
+            Array.from(dropZone.querySelectorAll(".batch-table-item")).forEach((item) => {
+                if (getTableName(item) === tableName) {
+                    item.remove();
+                }
+            });
+            if (shouldUpdate) {
+                updateBatchCounts();
+            }
+        }
+
+        function createBatchTablePicker() {
+            const picker = document.createElement("button");
+
+            picker.className = "batch-new-table-ghost batch-table-picker";
+            picker.type = "button";
+            picker.textContent = "Click or Drag to Add Table";
+            registerBatchTablePicker(picker);
+            return picker;
+        }
+
+        function syncBatchTablePickers() {
+            getBatchCards().forEach((batchCard) => {
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
+                let picker = dropZone ? dropZone.querySelector(".batch-table-picker") : null;
+
+                if (!dropZone) {
+                    return;
+                }
+                if (!picker) {
+                    picker = createBatchTablePicker();
+                    dropZone.append(picker);
+                }
+
+                const batchName = getBatchName(batchCard);
+
+                picker.disabled = Boolean(selectedActionButtonLock);
+                picker.setAttribute("aria-label", `Click or drag to add a table to ${batchName}`);
+                registerBatchTablePicker(picker);
+            });
+        }
+
+        function registerBatchTablePicker(picker) {
+            if (!picker || picker.dataset.registered === "true") {
+                return;
+            }
+
+            picker.dataset.registered = "true";
+            picker.addEventListener("click", () => {
+                const batchCard = picker.closest(".batch-card");
+                if (batchCard) {
+                    openBatchTableDialog(batchCard);
+                }
+            });
+        }
+
+        function closeBatchTableDialog() {
+            activeBatchTablePickerCard = null;
+            batchTableDialog.close();
+        }
+
+        function renderBatchTableDialogOptions(batchCard) {
+            const selectedTableItems = getTableItems();
+
+            batchTableDialogOptions.replaceChildren();
+            if (!selectedTableItems.length) {
+                const emptyState = document.createElement("div");
+                emptyState.className = "batch-table-picker-empty";
+                emptyState.textContent = "No selected tables";
+                batchTableDialogOptions.append(emptyState);
+                saveBatchTableDialogButton.disabled = true;
+                return;
+            }
+
+            saveBatchTableDialogButton.disabled = false;
+            selectedTableItems.forEach((tableItem) => {
+                const tableName = getTableName(tableItem);
+                const option = document.createElement("label");
+                const checkbox = document.createElement("input");
+                const content = document.createElement("span");
+                const labelText = document.createElement("span");
+
+                option.className = "batch-table-picker-option";
+                checkbox.type = "checkbox";
+                checkbox.value = tableName;
+                checkbox.checked = isTableAssignedToBatch(tableName, batchCard);
+                content.className = "batch-table-picker-option-content";
+                labelText.className = "batch-table-picker-option-name";
+                labelText.textContent = tableName;
+                content.append(labelText);
+                const metadataLoaded = tableItem.dataset.relationshipsLoaded === "true";
+                const metadata = document.createElement("dl");
+
+                metadata.className = "batch-table-picker-metadata";
+                metadata.setAttribute("aria-label", `${tableName} metadata`);
+                metadata.append(
+                    createBatchTableMetadataItem("Rows", metadataLoaded ? formatRowCount(tableItem.dataset.rowCount) : "—"),
+                    createBatchTableMetadataItem("Columns", metadataLoaded ? formatAdvancedValue(tableItem.dataset.columnCount, "0") : "—"),
+                    createBatchTableMetadataItem("Partitions", metadataLoaded ? formatAdvancedValue(tableItem.dataset.partitionCount, "0") : "—"),
+                    createBatchTableMetadataItem("Relations", metadataLoaded ? formatAdvancedValue(tableItem.dataset.relationshipCount, "0") : "—"),
+                );
+                content.append(metadata);
+                option.append(checkbox, content);
+                batchTableDialogOptions.append(option);
+            });
+        }
+
+        function createBatchTableMetadataItem(label, value) {
+            const metric = document.createElement("div");
+            const term = document.createElement("dt");
+            const description = document.createElement("dd");
+
+            metric.className = "batch-table-picker-metadata-item";
+            term.textContent = label;
+            description.textContent = value;
+            metric.append(term, description);
+            return metric;
+        }
+
+        function openBatchTableDialog(batchCard) {
+            activeBatchTablePickerCard = batchCard;
+            batchTableDialogTitle.textContent = `Add tables to ${getBatchName(batchCard)}`;
+            renderBatchTableDialogOptions(batchCard);
+            batchTableDialog.showModal();
+        }
+
+        function saveBatchTableDialogChanges() {
+            const batchCard = activeBatchTablePickerCard;
+            const dropZone = batchCard ? batchCard.querySelector(".batch-drop-zone") : null;
+
+            if (!batchCard || !dropZone) {
+                closeBatchTableDialog();
+                return;
+            }
+
+            Array.from(batchTableDialogOptions.querySelectorAll("input[type='checkbox']")).forEach((checkbox) => {
+                if (checkbox.checked) {
+                    assignTableNameToBatch(checkbox.value, dropZone);
+                } else {
+                    removeTableNameFromBatch(checkbox.value, batchCard, false);
+                }
+            });
+            updateBatchCounts();
+            closeBatchTableDialog();
+        }
+
         function addRelatedTableToSelected(tableName) {
             const normalizedTableName = String(tableName || "").trim();
 
@@ -1335,11 +1519,11 @@
                 return;
             }
 
-            const newTableGhost = dropZone.querySelector(".batch-new-table-ghost");
+            const tablePicker = dropZone.querySelector(".batch-table-picker");
             const assignment = createBatchTableItem(tableName, batchCard);
 
-            if (newTableGhost) {
-                dropZone.insertBefore(assignment, newTableGhost);
+            if (tablePicker) {
+                dropZone.insertBefore(assignment, tablePicker);
             } else {
                 dropZone.append(assignment);
             }
@@ -1463,14 +1647,12 @@
             dropZone.className = "batch-drop-zone";
             dropZone.dataset.dropZone = "batch";
             dropZone.setAttribute("aria-label", `Batch ${batchNumber} drop zone`);
-            const newTableGhost = document.createElement("div");
-            newTableGhost.className = "batch-new-table-ghost";
-            newTableGhost.textContent = "DRAG TO ADD NEW TABLE";
+            const tablePicker = createBatchTablePicker();
 
             removeButton.addEventListener("click", () => removeBatch(card));
             actions.append(count, removeButton);
             header.append(title, actions);
-            dropZone.append(newTableGhost);
+            dropZone.append(tablePicker);
             card.append(header, dropZone);
             registerDropZone(dropZone);
             return card;
@@ -1607,6 +1789,7 @@
         getDropZones().forEach(registerDropZone);
         getTableItems().forEach(registerTableItem);
         document.querySelectorAll(".batch-table-item").forEach(registerBatchTableItem);
+        document.querySelectorAll(".batch-table-picker").forEach(registerBatchTablePicker);
         document.querySelectorAll("[data-table-action]").forEach(registerTransferButton);
         document.querySelectorAll(".remove-batch-button").forEach((button) => {
             button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
@@ -1619,6 +1802,14 @@
         refreshModelTablesButton.addEventListener("click", () => runWithRestButtonsLocked(refreshModelTablesButton, refreshModelTables));
         fetchAdvanceDataButton.addEventListener("click", () => runWithRestButtonsLocked(fetchAdvanceDataButton, fetchAdvanceData));
         startModelRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(startModelRefreshButton, () => {}));
+        closeBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
+        cancelBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
+        saveBatchTableDialogButton.addEventListener("click", saveBatchTableDialogChanges);
+        batchTableDialog.addEventListener("click", (event) => {
+            if (event.target === batchTableDialog) {
+                closeBatchTableDialog();
+            }
+        });
         closeRelatedTablesDialogButton.addEventListener("click", () => relatedTablesDialog.close());
         relatedTablesDialog.addEventListener("click", (event) => {
             if (event.target === relatedTablesDialog) {
