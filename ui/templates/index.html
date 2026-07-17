@@ -17,10 +17,10 @@
                 </div>
 
                 <form class="login-form" id="loginForm">
-                    <p class="login-hint">Uses the Azure CLI account signed in on this machine.</p>
+                    <p class="login-hint">Continue in your browser with your Microsoft account.</p>
                     <p class="form-error" id="loginError" role="alert"></p>
                     <button class="primary-button" id="loginButton" type="submit">
-                        <span id="loginButtonText">Continue with Azure CLI</span>
+                        <span id="loginButtonText">Continue with Microsoft</span>
                     </button>
                 </form>
             </div>
@@ -41,7 +41,7 @@
                         <input id="workspaceSearch" type="search" placeholder="Search workspace name" aria-label="Search workspace name">
                     </label>
 
-                    <p class="empty-state" id="workspaceEmptyState" hidden>No workspaces were returned for this Azure CLI account.</p>
+                    <p class="empty-state" id="workspaceEmptyState" hidden>No workspaces were returned for this Microsoft account.</p>
                     <div class="workspace-list single-column" id="workspaceList"></div>
                 </section>
 
@@ -137,7 +137,7 @@
 
         function setLoginLoading(isLoading) {
             loginButton.disabled = isLoading;
-            loginButtonText.textContent = isLoading ? "Loading workspaces..." : "Continue with Azure CLI";
+            loginButtonText.textContent = isLoading ? "Loading workspaces..." : "Continue with Microsoft";
         }
 
         function setAssetLoading(isLoading) {
@@ -211,7 +211,7 @@
             const name = document.createElement("strong");
 
             label.textContent = "Logged user";
-            name.textContent = user.name || user.email || user.tenantId || "Azure CLI user";
+            name.textContent = user.name || user.email || user.tenantId || "Microsoft user";
             text.append(label, name);
             userMenu.append(text);
         }
@@ -231,7 +231,7 @@
             workspaceEmptyState.hidden = filteredWorkspaces.length > 0;
             workspaceEmptyState.textContent = appState.workspaces.length
                 ? "No workspaces match your search."
-                : "No workspaces were returned for this Azure CLI account.";
+                : "No workspaces were returned for this Microsoft account.";
 
             filteredWorkspaces.forEach((workspace) => {
                 const item = document.createElement("button");
@@ -580,7 +580,7 @@
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.message || "Azure CLI sign-in failed.");
+                    throw new Error(data.message || "Browser sign-in failed.");
                 }
 
                 completeLogin(data);

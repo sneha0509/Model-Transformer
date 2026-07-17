@@ -256,6 +256,10 @@
                         </div>
                         <button class="close-dialog-btn" id="closeBatchTableDialogButton" type="button" aria-label="Close table picker dialog">&#x2715;</button>
                     </div>
+                    <div class="batch-table-picker-toolbar">
+                        <span id="batchTableSelectionSummary">0 tables selected</span>
+                        <button id="toggleAllBatchTablesButton" type="button">Select all</button>
+                    </div>
                     <div class="batch-table-dialog-options" id="batchTableDialogOptions"></div>
                     <div class="batch-table-dialog-actions">
                         <button class="process-tables-button secondary-action-button" id="cancelBatchTableDialogButton" type="button">Cancel</button>
@@ -307,6 +311,8 @@
         const batchTableDialog = document.getElementById("batchTableDialog");
         const batchTableDialogTitle = document.getElementById("batchTableDialogTitle");
         const batchTableDialogOptions = document.getElementById("batchTableDialogOptions");
+        const batchTableSelectionSummary = document.getElementById("batchTableSelectionSummary");
+        const toggleAllBatchTablesButton = document.getElementById("toggleAllBatchTablesButton");
         const closeBatchTableDialogButton = document.getElementById("closeBatchTableDialogButton");
         const cancelBatchTableDialogButton = document.getElementById("cancelBatchTableDialogButton");
         const saveBatchTableDialogButton = document.getElementById("saveBatchTableDialogButton");
@@ -829,27 +835,20 @@
             const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableItem.dataset.relatedTables));
             const hasRelationshipData = tableItem.dataset.relationshipsLoaded === "true";
 
-            function updateRelatedRowState(relatedTableName, selectedBadge, batchBadge) {
+            function updateRelatedRowState(relatedTableName, selectionBadge, selectionButton) {
                 const state = getTableSelectionState(relatedTableName);
                 const isSelected = state.selectedLabel === "Selected";
                 const selectionState = isSelected ? "selected" : "unselected";
 
-                selectedBadge.dataset.state = selectionState;
-                selectedBadge.textContent = isSelected ? "-" : "+";
-                selectedBadge.dataset.relatedTableAction = isSelected ? "remove" : "add";
-                selectedBadge.setAttribute(
+                selectionBadge.dataset.state = selectionState;
+                selectionBadge.textContent = isSelected ? "Selected" : "Not selected";
+                selectionButton.dataset.action = isSelected ? "remove" : "add";
+                selectionButton.dataset.state = selectionState;
+                selectionButton.textContent = isSelected ? "Make unselected" : "Add to selected";
+                selectionButton.setAttribute(
                     "aria-label",
                     `${isSelected ? "Remove" : "Add"} ${relatedTableName} ${isSelected ? "from" : "to"} selected tables`,
                 );
-                batchBadge.dataset.state = selectionState;
-                batchBadge.textContent = state.batchLabel;
-                batchBadge.title = state.batchTitle;
-                batchBadge.setAttribute("aria-label", `Batch assignments: ${state.batchTitle}`);
-                if (state.batchTone) {
-                    batchBadge.dataset.batchTone = state.batchTone;
-                } else {
-                    delete batchBadge.dataset.batchTone;
-                }
             }
 
             relatedTablesDialogTitle.textContent = `Related tables for ${tableName}`;
@@ -877,40 +876,44 @@
             list.className = "related-table-list";
 
             relatedTables.forEach((relatedTable) => {
-                const state = getTableSelectionState(relatedTable.name);
                 const row = document.createElement("article");
+                const rowHeader = document.createElement("div");
                 const tableIdentity = document.createElement("div");
                 const tableNameLabel = document.createElement("strong");
+                const selectionControls = document.createElement("div");
+                const selectionBadge = document.createElement("span");
+                const selectionButton = document.createElement("button");
                 const relationshipDetail = document.createElement("div");
-                const selectedBadge = document.createElement("button");
-                const batchBadge = document.createElement("span");
+                const relationshipHeading = document.createElement("h3");
                 const relationships = parseRelatedTables(relatedTable.relationships);
                 const relatedTableName = String(relatedTable.name || "").trim();
 
                 row.className = "related-table-row";
+                rowHeader.className = "related-table-row-header";
                 tableIdentity.className = "related-table-identity";
                 tableNameLabel.textContent = relatedTableName;
-                relationshipDetail.className = "related-table-relationships";
-                relationshipDetail.append(createRelationshipDetailList(relationships));
-                selectedBadge.className = "related-table-badge related-table-selection-toggle";
-                selectedBadge.type = "button";
-                selectedBadge.addEventListener("click", () => {
-                    if (selectedBadge.dataset.relatedTableAction === "remove") {
+                selectionControls.className = "related-table-selection-controls";
+                selectionBadge.className = "related-table-selection-status";
+                selectionButton.className = "related-table-selection-button";
+                selectionButton.type = "button";
+                selectionButton.addEventListener("click", () => {
+                    if (selectionButton.dataset.action === "remove") {
                         removeRelatedTableFromSelected(relatedTableName);
                     } else {
                         addRelatedTableToSelected(relatedTableName);
                     }
-                    updateRelatedRowState(relatedTableName, selectedBadge, batchBadge);
+                    updateRelatedRowState(relatedTableName, selectionBadge, selectionButton);
                 });
-                batchBadge.className = "related-table-badge related-table-batch table-batch-chip";
-                if (state.batchTone) {
-                    batchBadge.dataset.batchTone = state.batchTone;
-                }
-                batchBadge.textContent = state.batchLabel;
-                updateRelatedRowState(relatedTableName, selectedBadge, batchBadge);
-
+                relationshipDetail.className = "related-table-relationships";
+                relationshipHeading.className = "related-table-relationships-title";
+                relationshipHeading.textContent = `Relationships (${relationships.length})`;
+                relationshipDetail.append(createRelationshipDetailList(relationships));
                 tableIdentity.append(tableNameLabel);
-                row.append(tableIdentity, relationshipDetail, batchBadge, selectedBadge);
+                selectionControls.append(selectionBadge, selectionButton);
+                rowHeader.append(tableIdentity, selectionControls);
+                relationshipDetail.prepend(relationshipHeading);
+                row.append(rowHeader, relationshipDetail);
+                updateRelatedRowState(relatedTableName, selectionBadge, selectionButton);
                 list.append(row);
             });
 
@@ -1218,6 +1221,26 @@
             batchTableDialog.close();
         }
 
+        function updateBatchTableSelectionControls() {
+            const checkboxes = Array.from(batchTableDialogOptions.querySelectorAll("input[type='checkbox']"));
+            const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+            const allSelected = checkboxes.length > 0 && selectedCount === checkboxes.length;
+
+            batchTableSelectionSummary.textContent = `${selectedCount} of ${checkboxes.length} selected`;
+            toggleAllBatchTablesButton.textContent = allSelected ? "Unselect all" : "Select all";
+            toggleAllBatchTablesButton.disabled = checkboxes.length === 0;
+        }
+
+        function toggleAllBatchTables() {
+            const checkboxes = Array.from(batchTableDialogOptions.querySelectorAll("input[type='checkbox']"));
+            const shouldSelectAll = checkboxes.some((checkbox) => !checkbox.checked);
+
+            checkboxes.forEach((checkbox) => {
+                checkbox.checked = shouldSelectAll;
+            });
+            updateBatchTableSelectionControls();
+        }
+
         function renderBatchTableDialogOptions(batchCard) {
             const selectedTableItems = getTableItems();
 
@@ -1228,6 +1251,7 @@
                 emptyState.textContent = "No selected tables";
                 batchTableDialogOptions.append(emptyState);
                 saveBatchTableDialogButton.disabled = true;
+                updateBatchTableSelectionControls();
                 return;
             }
 
@@ -1238,6 +1262,8 @@
                 const checkbox = document.createElement("input");
                 const content = document.createElement("span");
                 const labelText = document.createElement("span");
+                const assignmentBadge = document.createElement("span");
+                const assignedBatches = getAssignedBatches(tableName);
 
                 option.className = "batch-table-picker-option";
                 checkbox.type = "checkbox";
@@ -1246,7 +1272,13 @@
                 content.className = "batch-table-picker-option-content";
                 labelText.className = "batch-table-picker-option-name";
                 labelText.textContent = tableName;
-                content.append(labelText);
+                assignmentBadge.className = "batch-table-picker-assignment";
+                assignmentBadge.dataset.state = assignedBatches.length ? "assigned" : "unassigned";
+                assignmentBadge.textContent = assignedBatches.length
+                    ? `Added to ${assignedBatches.map(({batchLabel}) => batchLabel).join(", ")}`
+                    : "Not added to any batch";
+                assignmentBadge.title = assignmentBadge.textContent;
+                content.append(labelText, assignmentBadge);
                 const metadataLoaded = tableItem.dataset.relationshipsLoaded === "true";
                 const metadata = document.createElement("dl");
 
@@ -1261,7 +1293,9 @@
                 content.append(metadata);
                 option.append(checkbox, content);
                 batchTableDialogOptions.append(option);
+                checkbox.addEventListener("change", updateBatchTableSelectionControls);
             });
+            updateBatchTableSelectionControls();
         }
 
         function createBatchTableMetadataItem(label, value) {
@@ -1805,6 +1839,7 @@
         closeBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
         cancelBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
         saveBatchTableDialogButton.addEventListener("click", saveBatchTableDialogChanges);
+        toggleAllBatchTablesButton.addEventListener("click", toggleAllBatchTables);
         batchTableDialog.addEventListener("click", (event) => {
             if (event.target === batchTableDialog) {
                 closeBatchTableDialog();

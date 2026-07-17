@@ -208,7 +208,7 @@ def normalize_selected_tables_payload(payload):
     normalized_unselected_tables = [table for table in normalized_all_tables if table not in normalized_selected_tables]
 
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
-    user_name = str(user.get("name") or "Azure CLI user")
+    user_name = str(user.get("name") or "Microsoft user")
     user_email = str(user.get("email") or "")
     user_tenant_id = str(user.get("tenantId") or "")
 
@@ -235,7 +235,7 @@ def normalize_selected_tables_payload(payload):
             "email": user_email,
             "tenantId": user_tenant_id,
             "subscription": str(user.get("subscription") or ""),
-            "detail": user_email or user_tenant_id or "Signed in with Azure CLI",
+            "detail": user_email or user_tenant_id or "Signed in with Microsoft",
         },
     }
 
@@ -293,7 +293,7 @@ def normalize_saved_batches_payload(payload):
         unselected_tables = [table for table in all_tables if table not in selected_tables]
 
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
-    user_name = str(user.get("name") or "Azure CLI user")
+    user_name = str(user.get("name") or "Microsoft user")
     timeout_minutes = batch_creation_settings.get("timeoutMinutes")
     max_parallelism = batch_creation_settings.get("maxParallelism")
     retry_count = batch_creation_settings.get("retryCount")
