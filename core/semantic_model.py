@@ -92,8 +92,8 @@ def get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, da
         tables.append({
             "name": table_name,
             "rowCount": row_counts.get(table_name),
-            "columnCount": definition_table.get("columnCount", 0),
-            "partitionCount": definition_table.get("partitionCount", 0),
+            "columnCount": definition_table.get("columnCount"),
+            "partitionCount": definition_table.get("partitionCount"),
             "relationshipCount": relationship_summary.get("relationshipCount", 0),
             "relatedTables": relationship_summary.get("relatedTables", []),
         })

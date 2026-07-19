@@ -1762,7 +1762,7 @@ h3 {
 
 .table-choice-item {
     min-height: var(--table-list-row-height);
-    padding: 0 0 0 8px;
+    padding: 6px 8px 6px 12px;
     border-radius: 0;
 }
 
@@ -2154,9 +2154,10 @@ h3 {
 .batch-table-picker-toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 10px;
     min-height: 32px;
+    padding: 0 6px;
 }
 
 .batch-table-picker-toolbar span {
@@ -2188,6 +2189,8 @@ h3 {
 .batch-table-dialog-options {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
     align-items: stretch;
     gap: 5px;
     max-height: min(420px, 56vh);
@@ -2208,9 +2211,11 @@ h3 {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
+    align-self: stretch;
     gap: 5px;
     min-width: 0;
     min-height: 98px;
+    height: auto;
     padding: 6px;
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -2238,17 +2243,24 @@ h3 {
 
 .batch-table-picker-option-content {
     display: grid;
+    grid-template-rows: auto auto auto;
     gap: 3px;
     width: 100%;
     min-width: 0;
+    min-height: 0;
     max-width: 100%;
-    overflow: hidden;
 }
 
 .batch-table-picker-option-name {
+    display: block;
+    height: 1.2em;
+    overflow: hidden;
     color: var(--text);
     font-size: 0.78rem;
     line-height: 1.2;
+    overflow-wrap: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .batch-table-picker-assignment {
@@ -2278,17 +2290,20 @@ h3 {
 .batch-table-picker-metadata {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, auto);
     gap: 2px;
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     max-width: 100%;
     margin: 0;
-    overflow: hidden;
 }
 
 .batch-table-picker-metadata-item {
     display: grid;
+    grid-template-rows: auto auto;
     gap: 0;
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     max-width: 100%;

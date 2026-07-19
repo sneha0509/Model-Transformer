@@ -150,14 +150,16 @@ def normalize_table_names(tables):
     return normalized_tables
 
 
-def normalize_selected_table_details(payload, selected_tables):
-    """Return saved advanced metadata keyed to currently selected tables."""
+def normalize_advanced_table_details(payload, table_names):
+    """Return saved advanced metadata keyed to all current model tables."""
     payload = payload if isinstance(payload, dict) else {}
     detail_sources = []
-    if isinstance(payload.get("selectedTableDetails"), list):
-        detail_sources.extend(payload.get("selectedTableDetails"))
     if isinstance(payload.get("selectedTables"), list):
         detail_sources.extend(table for table in payload.get("selectedTables") if isinstance(table, dict))
+    if isinstance(payload.get("selectedTableDetails"), list):
+        detail_sources.extend(payload.get("selectedTableDetails"))
+    if isinstance(payload.get("advancedTableDetails"), list):
+        detail_sources.extend(payload.get("advancedTableDetails"))
 
     details_by_name = {}
     for detail in detail_sources:
@@ -165,11 +167,19 @@ def normalize_selected_table_details(payload, selected_tables):
             continue
 
         table_name = get_table_name(detail)
-        if not table_name or table_name not in selected_tables:
+        if not table_name or table_name not in table_names:
             continue
+
+        advanced_data_fetched = detail.get("advancedDataFetched")
+        if not isinstance(advanced_data_fetched, bool):
+            advanced_data_fetched = any(
+                detail.get(field) is not None
+                for field in ("rowCount", "columnCount", "partitionCount", "relationshipCount")
+            ) or bool(detail.get("relatedTables"))
 
         details_by_name[table_name] = {
             "name": table_name,
+            "advancedDataFetched": advanced_data_fetched,
             "rowCount": detail.get("rowCount"),
             "columnCount": detail.get("columnCount"),
             "partitionCount": detail.get("partitionCount"),
@@ -177,7 +187,12 @@ def normalize_selected_table_details(payload, selected_tables):
             "relatedTables": detail.get("relatedTables") if isinstance(detail.get("relatedTables"), list) else [],
         }
 
-    return [details_by_name[table_name] for table_name in selected_tables if table_name in details_by_name]
+    return [details_by_name[table_name] for table_name in table_names if table_name in details_by_name]
+
+
+def normalize_selected_table_details(payload, selected_tables):
+    """Return selected-table metadata from current or legacy preset payloads."""
+    return normalize_advanced_table_details(payload, selected_tables)
 
 
 def normalize_selected_tables_payload(payload):
@@ -213,7 +228,10 @@ def normalize_selected_tables_payload(payload):
     user_tenant_id = str(user.get("tenantId") or "")
 
     saved_batches = normalize_saved_batches_payload(payload)
-    selected_table_details = normalize_selected_table_details(payload, normalized_selected_tables)
+    advanced_table_details = normalize_advanced_table_details(payload, normalized_all_tables)
+    selected_table_details = [
+        detail for detail in advanced_table_details if detail["name"] in normalized_selected_tables
+    ]
 
     return {
         "presetId": str(payload.get("presetId") or payload.get("id") or ""),
@@ -226,6 +244,7 @@ def normalize_selected_tables_payload(payload):
         "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
         "selectedTables": normalized_selected_tables,
         "selectedTableDetails": selected_table_details,
+        "advancedTableDetails": advanced_table_details,
         "allTables": normalized_all_tables,
         "unselectedTables": normalized_unselected_tables,
         "batchCreationSettings": saved_batches["batchCreationSettings"],
@@ -332,7 +351,7 @@ def normalize_saved_batches_payload(payload):
         "datasetId": str(payload.get("datasetId") or ""),
         "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
         "selectedTables": selected_tables,
-        "selectedTableDetails": normalize_selected_table_details(payload, selected_tables),
+        "advancedTableDetails": normalize_advanced_table_details(payload, all_tables),
         "allTables": all_tables,
         "unselectedTables": unselected_tables,
         "unassignedTables": unassigned_tables,

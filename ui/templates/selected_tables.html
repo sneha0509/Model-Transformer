@@ -322,6 +322,7 @@
         const closeRelatedTablesDialogButton = document.getElementById("closeRelatedTablesDialogButton");
         const selectionPayload = {{ selection | tojson }};
         const canOverwritePreset = processTablesButton.dataset.canOverwritePreset === "true";
+        const advancedTableDataByName = new Map();
 
         let draggedTable = null;
         let selectedActionButtonLock = null;
@@ -537,6 +538,7 @@
         }
 
         function replaceTableLists(selectedTables, unselectedTables) {
+            syncAdvancedTableDataTableNames([...selectedTables, ...unselectedTables]);
             tableSourceList.replaceChildren(
                 createTableListEmptyState("selected"),
                 ...selectedTables.map(createSelectedTableItem),
@@ -579,7 +581,7 @@
             updateActionOutputVisibility();
         }
 
-        function formatAdvancedValue(value, fallback = "Unavailable") {
+        function formatAdvancedValue(value, fallback = "--") {
             if (value === null || value === undefined || value === "") {
                 return fallback;
             }
@@ -588,9 +590,23 @@
         }
 
         function formatRowCount(value) {
+            if (value === null || value === undefined || value === "") {
+                return "--";
+            }
+
             const numericValue = Number(value);
 
-            return Number.isFinite(numericValue) ? numericValue.toLocaleString() : "Unavailable";
+            return Number.isFinite(numericValue) ? numericValue.toLocaleString() : "--";
+        }
+
+        function formatOptionalCount(value) {
+            if (value === null || value === undefined || value === "") {
+                return "--";
+            }
+
+            const numericValue = Number(value);
+
+            return Number.isFinite(numericValue) && numericValue >= 0 ? numericValue.toLocaleString() : "--";
         }
 
         function parseRelatedTables(value) {
@@ -627,15 +643,43 @@
             return relatedTables.filter((relatedTable) => visibleLookup.has(String(relatedTable.name || "").trim().toLocaleLowerCase()));
         }
 
-        function getSelectedTableDetails() {
-            return getTableItems().map((tableItem) => ({
-                name: getTableName(tableItem),
-                rowCount: tableItem.dataset.rowCount || null,
-                columnCount: tableItem.dataset.columnCount || null,
-                partitionCount: tableItem.dataset.partitionCount || null,
-                relationshipCount: tableItem.dataset.relationshipCount || null,
-                relatedTables: parseRelatedTables(tableItem.dataset.relatedTables),
-            }));
+        function createEmptyAdvancedTableData(tableName) {
+            return {
+                name: tableName,
+                advancedDataFetched: false,
+                rowCount: null,
+                columnCount: null,
+                partitionCount: null,
+                relationshipCount: null,
+                relatedTables: [],
+            };
+        }
+
+        function getOrCreateAdvancedTableData(tableName) {
+            if (!advancedTableDataByName.has(tableName)) {
+                advancedTableDataByName.set(tableName, createEmptyAdvancedTableData(tableName));
+            }
+
+            return advancedTableDataByName.get(tableName);
+        }
+
+        function syncAdvancedTableDataTableNames(tableNames) {
+            const normalizedTableNames = normalizeTableNames(tableNames);
+            const currentTableNames = new Set(normalizedTableNames);
+
+            Array.from(advancedTableDataByName.keys()).forEach((tableName) => {
+                if (!currentTableNames.has(tableName)) {
+                    advancedTableDataByName.delete(tableName);
+                }
+            });
+            normalizedTableNames.forEach(getOrCreateAdvancedTableData);
+        }
+
+        function getAdvancedTableDetails() {
+            const tableNames = getVisibleTableNames();
+
+            syncAdvancedTableDataTableNames(tableNames);
+            return tableNames.map((tableName) => getOrCreateAdvancedTableData(tableName));
         }
 
         function updateRelatedTableButton(tableItem) {
@@ -691,9 +735,9 @@
             relatedAction.append(createRelatedTableButton());
             advancedData.append(
                 createAdvancedMetric("Rows", formatRowCount(tableData.rowCount)),
-                createAdvancedMetric("Columns", formatAdvancedValue(tableData.columnCount, "0")),
-                createAdvancedMetric("Partitions", formatAdvancedValue(tableData.partitionCount, "0")),
-                createAdvancedMetric("Relations", formatAdvancedValue(tableData.relationshipCount, "0")),
+                createAdvancedMetric("Columns", formatAdvancedValue(tableData.columnCount)),
+                createAdvancedMetric("Partitions", formatOptionalCount(tableData.partitionCount)),
+                createAdvancedMetric("Relations", formatOptionalCount(tableData.relationshipCount)),
                 relatedAction,
             );
             advancedData.hidden = false;
@@ -701,33 +745,51 @@
             tableSourceList.classList.add("has-advanced-data");
         }
 
-        function updateSelectedTableAdvancedData(tableData) {
+        function normalizeAdvancedTableData(tableData, forceFetched = false) {
             const tableName = formatAdvancedValue(tableData.name, "");
-            const tableItem = getTableItems().find((item) => getTableName(item) === tableName);
+            const advancedDataFetched = forceFetched || tableData.advancedDataFetched === true;
+            const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableData.relatedTables));
+            const relationshipCount = advancedDataFetched ? relatedTables.reduce(
+                (count, relatedTable) => count + parseRelatedTables(relatedTable.relationships).length,
+                0,
+            ) : null;
 
+            return {
+                name: tableName,
+                advancedDataFetched,
+                rowCount: advancedDataFetched ? tableData.rowCount ?? null : null,
+                columnCount: advancedDataFetched ? tableData.columnCount ?? null : null,
+                partitionCount: advancedDataFetched ? tableData.partitionCount ?? null : null,
+                relationshipCount,
+                relatedTables: advancedDataFetched ? relatedTables : [],
+            };
+        }
+
+        function applyAdvancedTableDataToItem(tableItem, tableData) {
+            tableItem.dataset.rowCount = tableData.rowCount ?? "";
+            tableItem.dataset.columnCount = tableData.columnCount ?? "";
+            tableItem.dataset.partitionCount = tableData.partitionCount ?? "";
+            tableItem.dataset.relationshipCount = tableData.relationshipCount ?? "";
+            tableItem.dataset.relatedTables = JSON.stringify(tableData.relatedTables);
+            tableItem.dataset.relationshipsLoaded = "true";
+            renderTableAdvancedData(tableItem, tableData);
+            updateRelatedTableButton(tableItem);
+        }
+
+        function updateSelectedTableAdvancedData(tableData) {
+            const normalizedTableData = normalizeAdvancedTableData(tableData, true);
+            const tableItem = getTableItems().find((item) => getTableName(item) === normalizedTableData.name);
+
+            if (!normalizedTableData.name) {
+                return false;
+            }
+
+            advancedTableDataByName.set(normalizedTableData.name, normalizedTableData);
             if (!tableItem) {
                 return false;
             }
 
-            const relatedTables = filterRelatedTablesToVisible(parseRelatedTables(tableData.relatedTables));
-            const relationshipCount = relatedTables.reduce(
-                (count, relatedTable) => count + parseRelatedTables(relatedTable.relationships).length,
-                0,
-            );
-            const normalizedTableData = {
-                ...tableData,
-                relationshipCount,
-                relatedTables,
-            };
-
-            tableItem.dataset.rowCount = tableData.rowCount ?? "";
-            tableItem.dataset.columnCount = tableData.columnCount ?? "";
-            tableItem.dataset.partitionCount = tableData.partitionCount ?? "0";
-            tableItem.dataset.relationshipCount = relationshipCount;
-            tableItem.dataset.relatedTables = JSON.stringify(relatedTables);
-            tableItem.dataset.relationshipsLoaded = "true";
-            renderTableAdvancedData(tableItem, normalizedTableData);
-            updateRelatedTableButton(tableItem);
+            applyAdvancedTableDataToItem(tableItem, normalizedTableData);
             return true;
         }
 
@@ -1083,13 +1145,33 @@
             item.append(content, removeButton);
             registerTableItem(item);
             registerTransferButton(removeButton);
+            const advancedTableData = getOrCreateAdvancedTableData(tableName);
+            if (advancedTableData.advancedDataFetched) {
+                applyAdvancedTableDataToItem(item, advancedTableData);
+            }
             return item;
         }
 
-        function restoreSavedSelectedTableDetails() {
-            const savedDetails = Array.isArray(selectionPayload.selectedTableDetails) ? selectionPayload.selectedTableDetails : [];
+        function restoreSavedAdvancedTableDetails() {
+            const savedDetails = Array.isArray(selectionPayload.advancedTableDetails)
+                ? selectionPayload.advancedTableDetails
+                : Array.isArray(selectionPayload.selectedTableDetails)
+                    ? selectionPayload.selectedTableDetails
+                    : [];
 
-            savedDetails.forEach(updateSelectedTableAdvancedData);
+            syncAdvancedTableDataTableNames(getVisibleTableNames());
+            savedDetails.forEach((tableDetail) => {
+                const normalizedTableData = normalizeAdvancedTableData(tableDetail);
+                if (!normalizedTableData.name) {
+                    return;
+                }
+
+                advancedTableDataByName.set(normalizedTableData.name, normalizedTableData);
+                const tableItem = getTableItems().find((item) => getTableName(item) === normalizedTableData.name);
+                if (tableItem && normalizedTableData.advancedDataFetched) {
+                    applyAdvancedTableDataToItem(tableItem, normalizedTableData);
+                }
+            });
         }
 
         function createUnselectedTableItem(tableName) {
@@ -1272,6 +1354,7 @@
                 content.className = "batch-table-picker-option-content";
                 labelText.className = "batch-table-picker-option-name";
                 labelText.textContent = tableName;
+                labelText.title = tableName;
                 assignmentBadge.className = "batch-table-picker-assignment";
                 assignmentBadge.dataset.state = assignedBatches.length ? "assigned" : "unassigned";
                 assignmentBadge.textContent = assignedBatches.length
@@ -1285,10 +1368,10 @@
                 metadata.className = "batch-table-picker-metadata";
                 metadata.setAttribute("aria-label", `${tableName} metadata`);
                 metadata.append(
-                    createBatchTableMetadataItem("Rows", metadataLoaded ? formatRowCount(tableItem.dataset.rowCount) : "—"),
-                    createBatchTableMetadataItem("Columns", metadataLoaded ? formatAdvancedValue(tableItem.dataset.columnCount, "0") : "—"),
-                    createBatchTableMetadataItem("Partitions", metadataLoaded ? formatAdvancedValue(tableItem.dataset.partitionCount, "0") : "—"),
-                    createBatchTableMetadataItem("Relations", metadataLoaded ? formatAdvancedValue(tableItem.dataset.relationshipCount, "0") : "—"),
+                    createBatchTableMetadataItem("Rows", metadataLoaded ? formatRowCount(tableItem.dataset.rowCount) : "--"),
+                    createBatchTableMetadataItem("Columns", metadataLoaded ? formatAdvancedValue(tableItem.dataset.columnCount) : "--"),
+                    createBatchTableMetadataItem("Partitions", metadataLoaded ? formatOptionalCount(tableItem.dataset.partitionCount) : "--"),
+                    createBatchTableMetadataItem("Relations", metadataLoaded ? formatOptionalCount(tableItem.dataset.relationshipCount) : "--"),
                 );
                 content.append(metadata);
                 option.append(checkbox, content);
@@ -1466,7 +1549,7 @@
 
                 const advancedTables = Array.isArray(data.tables) ? data.tables : [];
                 const updatedCount = advancedTables.filter(updateSelectedTableAdvancedData).length;
-                selectionPayload.selectedTableDetails = getSelectedTableDetails();
+                selectionPayload.advancedTableDetails = getAdvancedTableDetails();
                 setFetchAdvanceDataStatus(
                     `Updated advanced data for ${updatedCount} selected ${updatedCount === 1 ? "table" : "tables"}.`,
                     "success",
@@ -1751,7 +1834,7 @@
                 datasetId: selectionPayload.datasetId || "",
                 assetCategory: selectionPayload.assetCategory || selectionPayload.category || "Model",
                 selectedTables: getTableItems().map(getTableName),
-                selectedTableDetails: getSelectedTableDetails(),
+                advancedTableDetails: getAdvancedTableDetails(),
                 allTables: selectionPayload.allTables || [
                     ...getTableItems().map(getTableName),
                     ...getUnselectedTableItems().map(getTableName),
@@ -1828,7 +1911,7 @@
         document.querySelectorAll(".remove-batch-button").forEach((button) => {
             button.addEventListener("click", () => removeBatch(button.closest(".batch-card")));
         });
-        restoreSavedSelectedTableDetails();
+        restoreSavedAdvancedTableDetails();
         updateBatchCounts();
         syncTableListEmptyStates();
 
