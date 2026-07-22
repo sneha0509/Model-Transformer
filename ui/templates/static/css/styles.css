@@ -1762,7 +1762,7 @@ h3 {
 
 .table-choice-item {
     min-height: var(--table-list-row-height);
-    padding: 0 0 0 8px;
+    padding: 6px 8px 6px 12px;
     border-radius: 0;
 }
 
@@ -2128,7 +2128,7 @@ h3 {
 }
 
 .batch-table-dialog {
-    width: min(780px, calc(100vw - 32px));
+    width: min(800px, calc(100vw - 32px));
     max-height: min(680px, calc(100vh - 48px));
     padding: 0;
     border: 0;
@@ -2143,22 +2143,59 @@ h3 {
 
 .batch-table-dialog-inner {
     display: grid;
-    gap: 14px;
-    padding: 18px;
+    gap: 8px;
+    padding: 10px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--surface-strong);
     box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
 }
 
+.batch-table-picker-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 32px;
+    padding: 0 6px;
+}
+
+.batch-table-picker-toolbar span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.batch-table-picker-toolbar button {
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    color: var(--primary-strong);
+    background: var(--primary-soft);
+    font-size: 0.68rem;
+}
+
+.batch-table-picker-toolbar button:hover:not(:disabled) {
+    color: var(--button-text);
+    background: var(--primary);
+}
+
+.batch-table-picker-toolbar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 .batch-table-dialog-options {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
     align-items: stretch;
-    gap: 10px;
-    max-height: min(380px, 52vh);
+    gap: 5px;
+    max-height: min(420px, 56vh);
     overflow: auto;
-    padding: 10px;
+    padding: 5px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
@@ -2174,10 +2211,12 @@ h3 {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
-    gap: 10px;
+    align-self: stretch;
+    gap: 5px;
     min-width: 0;
-    min-height: 142px;
-    padding: 12px;
+    min-height: 98px;
+    height: auto;
+    padding: 6px;
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text);
@@ -2204,39 +2243,73 @@ h3 {
 
 .batch-table-picker-option-content {
     display: grid;
-    gap: 7px;
+    grid-template-rows: auto auto auto;
+    gap: 3px;
     width: 100%;
     min-width: 0;
+    min-height: 0;
     max-width: 100%;
-    overflow: hidden;
 }
 
 .batch-table-picker-option-name {
+    display: block;
+    height: 1.2em;
+    overflow: hidden;
     color: var(--text);
-    font-size: 0.9rem;
-    line-height: 1.3;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    overflow-wrap: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.batch-table-picker-assignment {
+    display: block;
+    width: 100%;
+    max-width: 130px;
+    padding: 2px 5px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    background: var(--surface-strong);
+    font-size: 0.55rem;
+    font-weight: 900;
+    line-height: 1.25;
+    overflow: hidden;
+    overflow-wrap: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.batch-table-picker-assignment[data-state="assigned"] {
+    border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 10%, var(--surface));
 }
 
 .batch-table-picker-metadata {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    grid-auto-rows: minmax(0, auto);
+    gap: 2px;
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     max-width: 100%;
     margin: 0;
-    overflow: hidden;
 }
 
 .batch-table-picker-metadata-item {
     display: grid;
-    gap: 2px;
+    grid-template-rows: auto auto;
+    gap: 0;
+    box-sizing: border-box;
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    padding: 6px;
+    padding: 2px 3px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     background: var(--surface-strong);
     overflow: hidden;
 }
@@ -2253,20 +2326,20 @@ h3 {
 
 .batch-table-picker-metadata-item dt {
     color: var(--muted);
-    font-size: 0.65rem;
+    font-size: 0.52rem;
     font-weight: 800;
     text-transform: uppercase;
 }
 
 .batch-table-picker-metadata-item dd {
     color: var(--text);
-    font-size: 0.75rem;
+    font-size: 0.64rem;
     font-weight: 900;
 }
 
 .batch-table-picker-option input {
-    width: 15px;
-    height: 15px;
+    width: 13px;
+    height: 13px;
     accent-color: var(--primary);
 }
 
@@ -2279,7 +2352,13 @@ h3 {
     text-align: center;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 760px) {
+    .batch-table-dialog-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
     .batch-table-dialog-options {
         grid-template-columns: 1fr;
     }
@@ -2660,40 +2739,29 @@ h3 {
 
 .related-table-list {
     display: grid;
-    grid-template-columns: max-content minmax(220px, 1fr) 184px 44px;
-    column-gap: 10px;
-    row-gap: 6px;
+    gap: 10px;
 }
 
 .related-table-row {
-    --related-row-height: 46px;
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: center;
+    gap: 14px;
     min-width: 0;
-    min-height: var(--related-row-height);
-    padding: 10px 12px;
+    padding: 16px;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
 }
 
-.related-table-identity,
-.related-table-badge {
+.related-table-row-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
     min-width: 0;
 }
 
 .related-table-identity {
-    display: grid;
-    gap: 3px;
-    align-content: center;
-    width: max-content;
-}
-
-.related-table-row strong,
-.related-table-badge {
-    height: 26px;
+    min-width: 0;
 }
 
 .related-table-relationships,
@@ -2702,12 +2770,80 @@ h3 {
 }
 
 .related-table-row strong {
-    white-space: nowrap;
+    display: block;
+    color: var(--text);
+    font-size: 0.98rem;
+    overflow-wrap: anywhere;
 }
 
-.related-table-row strong {
-    color: var(--text);
-    font-size: 0.86rem;
+.related-table-selection-controls {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.related-table-selection-status {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.related-table-selection-status[data-state="selected"] {
+    border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 12%, var(--surface));
+}
+
+.related-table-selection-status[data-state="unselected"] {
+    color: var(--muted);
+    background: var(--surface-strong);
+}
+
+.related-table-selection-button {
+    min-height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 7px;
+    color: var(--button-text);
+    background: var(--accent);
+    font-size: 0.68rem;
+}
+
+.related-table-selection-button:hover {
+    background: var(--accent-strong);
+}
+
+.related-table-selection-button[data-state="selected"] {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.related-table-selection-button[data-state="selected"]:hover {
+    color: var(--button-text);
+    background: var(--danger);
+}
+
+.related-table-relationships {
+    display: grid;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.related-table-relationships-title {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 900;
+    text-transform: uppercase;
 }
 
 .related-activity-badge {
@@ -2737,9 +2873,9 @@ h3 {
 
 .related-table-detail {
     color: var(--text);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     font-weight: 800;
-    line-height: 1.35;
+    line-height: 1.3;
     overflow: hidden;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -2747,7 +2883,7 @@ h3 {
 
 .related-relationship-list {
     display: grid;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
 }
 
@@ -2755,83 +2891,28 @@ h3 {
     display: grid;
     grid-template-columns: 58px minmax(0, 1fr);
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     min-width: 0;
-}
-
-.related-table-badge {
-    display: inline-flex;
-    width: 100%;
-    align-items: center;
-    justify-content: center;
-    padding: 0 10px;
+    padding: 6px 8px;
     border: 1px solid var(--border);
-    border-radius: 999px;
-    color: var(--muted);
+    border-radius: 6px;
     background: var(--surface-strong);
-    font-size: 0.68rem;
-    font-weight: 900;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.related-table-selection-toggle {
-    cursor: pointer;
-    font-family: inherit;
-    line-height: 1;
-    transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.related-table-selection-toggle:hover {
-    transform: none;
-}
-
-.related-table-badge[data-state="selected"] {
-    border-color: color-mix(in srgb, var(--success) 42%, var(--border));
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 12%, var(--surface));
-}
-
-.related-table-selection-toggle[data-state="selected"]:hover {
-    border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
-}
-
-.related-table-badge[data-state="unselected"] {
-    border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
-}
-
-.related-table-selection-toggle[data-state="unselected"]:hover {
-    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 12%, var(--surface));
-}
-
-.related-table-batch[data-batch-tone] {
-    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 12%, var(--surface));
-}
-
-.related-table-batch {
-    padding-inline: 12px;
 }
 
 @media (max-width: 720px) {
-    .related-table-list {
-        min-width: 748px;
+    .related-table-row-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
     }
 
-    .related-table-row strong {
-        white-space: nowrap;
+    .related-table-selection-controls {
+        width: 100%;
+        flex-wrap: wrap;
     }
 
-    .related-table-detail {
-        white-space: normal;
+    .related-table-selection-button {
+        flex: 1 1 auto;
     }
 }
 

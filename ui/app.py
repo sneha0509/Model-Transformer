@@ -110,11 +110,11 @@ def delete_preset(preset_id):
 
 
 @model_transformer.post("/api/login")
-def login_with_azure_cli():
+def login_with_browser():
     try:
         login_context = get_login_context()
     except (ClientAuthenticationError, CredentialUnavailableError) as exc:
-        return jsonify({"message": f"Azure CLI authentication failed. Run az login, then try again. {exc}"}), 401
+        return jsonify({"message": f"Browser authentication failed. Try signing in again. {exc}"}), 401
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         message = "Power BI workspace lookup failed. Confirm this account can access Power BI/Fabric workspaces."
@@ -132,7 +132,7 @@ def workspace_assets(workspace_id):
     try:
         assets = get_workspace_assets(workspace_id)
     except (ClientAuthenticationError, CredentialUnavailableError) as exc:
-        return jsonify({"message": f"Azure CLI authentication failed. Run az login, then try again. {exc}"}), 401
+        return jsonify({"message": f"Browser authentication failed. Try signing in again. {exc}"}), 401
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         message = "Could not load models and reports for this workspace. Confirm this account has workspace access."
@@ -150,7 +150,7 @@ def asset_details(workspace_id, category, asset_id):
     try:
         details = get_asset_details(workspace_id, category, asset_id)
     except (ClientAuthenticationError, CredentialUnavailableError) as exc:
-        return jsonify({"message": f"Azure CLI authentication failed. Run az login, then try again. {exc}"}), 401
+        return jsonify({"message": f"Browser authentication failed. Try signing in again. {exc}"}), 401
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         message = "Could not load metadata for this item. Confirm this account has item access."
@@ -172,7 +172,7 @@ def advanced_table_data(workspace_id, model_id):
     try:
         details = get_advanced_table_details(workspace_id, model_id, selected_tables, all_tables)
     except (ClientAuthenticationError, CredentialUnavailableError) as exc:
-        return jsonify({"message": f"Azure CLI authentication failed. Run az login, then try again. {exc}"}), 401
+        return jsonify({"message": f"Browser authentication failed. Try signing in again. {exc}"}), 401
     except requests.HTTPError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         message = "Could not fetch advanced table data for this semantic model. Confirm this account can query the model."

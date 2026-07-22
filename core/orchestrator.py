@@ -1,26 +1,26 @@
 """Application service layer that wires authentication clients to UI workflows."""
 
-from core.auth import build_user, get_azure_cli_account, get_fabric_access_token, get_power_bi_access_token
+from core.auth import build_user, get_fabric_access_token, get_power_bi_access_token
 from core.fabric_client import FabricClient
 from core.powerbi_client import PowerBIClient
 from core.semantic_model import get_advanced_table_metadata, get_power_bi_asset_details
 
 
 def create_power_bi_client():
-    """Build a Power BI client with a fresh Azure CLI-backed access token."""
+    """Build a Power BI client with a browser-authenticated access token."""
     return PowerBIClient(get_power_bi_access_token())
 
 
 def create_fabric_client():
-    """Build a Fabric client with a fresh Azure CLI-backed access token."""
+    """Build a Fabric client with a browser-authenticated access token."""
     return FabricClient(get_fabric_access_token())
 
 
 def get_login_context():
     """Return the signed-in user and accessible workspaces for the home page."""
-    account = get_azure_cli_account()
-    power_bi_client = create_power_bi_client()
-    return {"user": build_user(account), "workspaces": power_bi_client.get_workspaces()}
+    access_token = get_power_bi_access_token()
+    power_bi_client = PowerBIClient(access_token)
+    return {"user": build_user(access_token), "workspaces": power_bi_client.get_workspaces()}
 
 
 def get_workspace_assets(workspace_id):
