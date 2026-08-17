@@ -271,18 +271,26 @@ def normalize_saved_batches_payload(payload):
     unassigned_tables = normalize_table_names(payload.get("unassignedTables") if isinstance(payload.get("unassignedTables"), list) else [])
 
     normalized_batches = []
+    batches_by_name = {}
     batch_table_names = []
     for index, batch in enumerate(batches, start=1):
         batch = batch if isinstance(batch, dict) else {}
         tables = batch.get("tables") if isinstance(batch.get("tables"), list) else []
+        batch_name = str(batch.get("name") or f"Batch {index}").strip() or f"Batch {index}"
         normalized_tables = [str(table).strip() for table in tables if str(table).strip()]
         for table in normalized_tables:
             if table not in batch_table_names:
                 batch_table_names.append(table)
-        normalized_batches.append({
-            "name": str(batch.get("name") or f"Batch {index}"),
-            "tables": normalized_tables,
-        })
+
+        normalized_batch = batches_by_name.get(batch_name)
+        if normalized_batch is None:
+            normalized_batch = {"name": batch_name, "tables": []}
+            batches_by_name[batch_name] = normalized_batch
+            normalized_batches.append(normalized_batch)
+
+        for table in normalized_tables:
+            if table not in normalized_batch["tables"]:
+                normalized_batch["tables"].append(table)
 
     if not normalized_batches:
         # Keep downstream templates simple by always returning at least one batch record.
