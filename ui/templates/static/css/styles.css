@@ -55,6 +55,12 @@ body {
     transition: background 160ms ease, color 160ms ease;
 }
 
+html.is-scroll-locked,
+body.is-scroll-locked {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 button,
 input,
 select {
@@ -1687,7 +1693,7 @@ h3 {
 }
 
 .table-drag-list {
-    --table-list-row-height: 52px;
+    --table-list-row-height: 64px;
     grid-auto-rows: minmax(var(--table-list-row-height), auto);
 }
 
@@ -2760,8 +2766,10 @@ h3 {
 }
 
 .new-batch-drop-zone .batch-new-table-ghost {
+    width: 100%;
     min-height: 38px;
     margin-top: 0;
+    cursor: pointer;
 }
 
 .batch-table-item {

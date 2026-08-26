@@ -233,8 +233,8 @@
                             {% endfor %}
                         </div>
 
-                        <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Drop a new table here to create a new batch">
-                            <div class="batch-new-table-ghost new-batch-ghost">Drag new table here to make new batch</div>
+                        <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Click or drag tables here to make new batches">
+                            <button class="batch-new-table-ghost new-batch-ghost" id="createNewBatchButton" type="button">Click or drag tables here to make new batches</button>
                         </div>
                     </div>
                 </section>
@@ -331,6 +331,7 @@
         const backHomeLink = document.getElementById("backHomeLink");
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
+        const createNewBatchButton = document.getElementById("createNewBatchButton");
         const presetNameInput = document.getElementById("presetNameInput");
         const createPresetButton = document.getElementById("createPresetButton");
         const processTablesButton = document.getElementById("processTablesButton");
@@ -373,6 +374,20 @@
         let activeBatchTablePickerCard = null;
         let activeRefreshJobId = null;
         let initialPresetState = null;
+
+        function syncPageScrollLock() {
+            const hasOpenDialog = Array.from(document.querySelectorAll("dialog")).some((dialog) => dialog.open);
+            const shouldLockScroll = !loadingPopup.hidden || hasOpenDialog;
+
+            document.documentElement.classList.toggle("is-scroll-locked", shouldLockScroll);
+            document.body.classList.toggle("is-scroll-locked", shouldLockScroll);
+        }
+
+        const overlayStateObserver = new MutationObserver(syncPageScrollLock);
+        overlayStateObserver.observe(loadingPopup, {attributes: true, attributeFilter: ["hidden"]});
+        document.querySelectorAll("dialog").forEach((dialog) => {
+            overlayStateObserver.observe(dialog, {attributes: true, attributeFilter: ["open"]});
+        });
 
         function getSelectedPageButtons() {
             return Array.from(document.querySelectorAll("button"));
@@ -605,10 +620,12 @@
         function showLoadingPopup(message) {
             loadingPopupLabel.textContent = message;
             loadingPopup.hidden = false;
+            syncPageScrollLock();
         }
 
         function hideLoadingPopup() {
             loadingPopup.hidden = true;
+            syncPageScrollLock();
         }
 
         function setFetchAdvanceDataStatus(message, tone = "") {
@@ -1714,6 +1731,13 @@
             updateBatchCounts();
         }
 
+        function addEmptyBatch() {
+            const batchNumber = getBatchCards().length + 1;
+
+            batchList.append(createBatchCard(batchNumber));
+            updateBatchCounts();
+        }
+
         function renumberBatches() {
             getBatchCards().forEach((batchCard, index) => {
                 const batchNumber = index + 1;
@@ -2181,11 +2205,8 @@
         window.addEventListener("resize", () => {
             document.querySelectorAll(".table-batch-label").forEach(updateBatchScrollControls);
         });
-        addBatchButton.addEventListener("click", () => {
-            const batchNumber = getBatchCards().length + 1;
-            batchList.append(createBatchCard(batchNumber));
-            updateBatchCounts();
-        });
+        addBatchButton.addEventListener("click", addEmptyBatch);
+        createNewBatchButton.addEventListener("click", addEmptyBatch);
         if (createPresetButton) {
             createPresetButton.addEventListener("click", () => savePreset({createNew: true}));
         }
