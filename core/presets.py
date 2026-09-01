@@ -7,7 +7,7 @@ from pathlib import Path
 from core.normalization import normalize_saved_batches_payload
 
 
-PRESETS_DIR = Path("presets")
+PRESETS_DIR = Path(__file__).resolve().parent.parent / "presets"
 PRESET_ID_PATTERN = re.compile(r"[\w.-]+")
 
 
@@ -65,18 +65,20 @@ def list_presets():
 def save_preset(payload):
     """Normalize and save a new preset, choosing a unique file name if needed."""
     saved = normalize_saved_batches_payload(payload)
-    preset_id_base = re.sub(r"[^\w]+", "_", saved.get("presetName") or saved.get("modelName") or "preset").strip("_") or "preset"
-    preset_id = preset_id_base
+    preset_name_base = saved.get("presetName") or saved.get("modelName") or "preset"
+    preset_name = preset_name_base
+    preset_id = re.sub(r"[^\w]+", "_", preset_name).strip("_") or "preset"
 
     PRESETS_DIR.mkdir(exist_ok=True)
     preset_path = PRESETS_DIR / f"{preset_id}.json"
     suffix = 2
     while preset_path.exists():
-        # Preserve existing presets by suffixing duplicate names instead of overwriting.
-        preset_id = f"{preset_id_base}_{suffix}"
+        preset_name = f"{preset_name_base}{suffix}"
+        preset_id = re.sub(r"[^\w]+", "_", preset_name).strip("_") or f"preset{suffix}"
         preset_path = PRESETS_DIR / f"{preset_id}.json"
         suffix += 1
 
+    saved["presetName"] = preset_name
     saved["presetId"] = preset_id
     with open(preset_path, "w", encoding="utf-8") as file:
         json.dump(saved, file, indent=4)

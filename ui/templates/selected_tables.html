@@ -203,7 +203,7 @@
                                     {% if can_create_new_preset|default(true) %}
                                         <button class="process-tables-button create-preset-button" id="createPresetButton" type="button">Create New Preset</button>
                                     {% endif %}
-                                    <button class="process-tables-button" id="processTablesButton" type="button" data-can-overwrite-preset="{{ 'true' if can_overwrite_preset|default(false) else 'false' }}">{{ 'Overwrite Preset' if can_overwrite_preset|default(false) else 'Create Preset' }}</button>
+                                    <button class="process-tables-button" id="processTablesButton" type="button" data-can-overwrite-preset="{{ 'true' if can_overwrite_preset|default(false) else 'false' }}">{{ 'Overwrite Preset' if can_overwrite_preset|default(false) else 'Save Preset' }}</button>
                                 </div>
                             </div>
                         </div>
@@ -233,8 +233,8 @@
                             {% endfor %}
                         </div>
 
-                        <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Drop a new table here to create a new batch">
-                            <div class="batch-new-table-ghost new-batch-ghost">Drag new table here to make new batch</div>
+                        <div class="new-batch-drop-zone" id="newBatchDropZone" data-drop-zone="new-batch" aria-label="Click or drag tables here to make new batches">
+                            <button class="batch-new-table-ghost new-batch-ghost" id="createNewBatchButton" type="button">Click or drag tables here to make new batches</button>
                         </div>
                     </div>
                 </section>
@@ -246,6 +246,40 @@
                     <strong id="loadingPopupLabel">Loading...</strong>
                 </div>
             </div>
+
+            <dialog class="preset-save-dialog" id="presetSaveDialog" aria-labelledby="presetSaveDialogTitle">
+                <div class="preset-save-dialog-inner">
+                    <div class="dialog-head">
+                        <div>
+                            <p class="eyebrow">Unsaved preset</p>
+                            <h2 id="presetSaveDialogTitle">Save preset before refresh</h2>
+                        </div>
+                    </div>
+                    <p class="preset-save-dialog-message" id="presetSaveDialogMessage"></p>
+                    <div class="preset-save-dialog-actions">
+                        <button class="process-tables-button secondary-action-button" id="savePresetAsNewButton" type="button">Save as New</button>
+                        <button class="process-tables-button" id="overwritePresetBeforeRefreshButton" type="button">Overwrite</button>
+                        <button class="process-tables-button secondary-action-button" id="cancelPresetSaveButton" type="button">Cancel</button>
+                    </div>
+                </div>
+            </dialog>
+
+            <dialog class="refresh-progress-dialog" id="refreshProgressDialog" aria-labelledby="refreshProgressTitle">
+                <div class="refresh-progress-inner">
+                    <div class="dialog-head">
+                        <div>
+                            <p class="eyebrow">Model refresh</p>
+                            <h2 id="refreshProgressTitle">Refreshing batches</h2>
+                        </div>
+                        <span class="refresh-state-badge" id="refreshStateBadge">Queued</span>
+                    </div>
+                    <p class="refresh-progress-message" id="refreshProgressMessage" aria-live="polite">Preparing refresh...</p>
+                    <div class="refresh-batch-list" id="refreshBatchList"></div>
+                    <div class="refresh-progress-actions">
+                        <button class="process-tables-button danger-action-button" id="cancelModelRefreshButton" type="button">Cancel the Refresh</button>
+                    </div>
+                </div>
+            </dialog>
 
             <dialog class="batch-table-dialog" id="batchTableDialog" aria-labelledby="batchTableDialogTitle">
                 <div class="batch-table-dialog-inner">
@@ -297,6 +331,7 @@
         const backHomeLink = document.getElementById("backHomeLink");
         const addBatchButton = document.getElementById("addBatchButton");
         const newBatchDropZone = document.getElementById("newBatchDropZone");
+        const createNewBatchButton = document.getElementById("createNewBatchButton");
         const presetNameInput = document.getElementById("presetNameInput");
         const createPresetButton = document.getElementById("createPresetButton");
         const processTablesButton = document.getElementById("processTablesButton");
@@ -308,6 +343,16 @@
         const fetchAdvanceDataStatus = document.getElementById("fetchAdvanceDataStatus");
         const loadingPopup = document.getElementById("loadingPopup");
         const loadingPopupLabel = document.getElementById("loadingPopupLabel");
+        const presetSaveDialog = document.getElementById("presetSaveDialog");
+        const presetSaveDialogMessage = document.getElementById("presetSaveDialogMessage");
+        const savePresetAsNewButton = document.getElementById("savePresetAsNewButton");
+        const overwritePresetBeforeRefreshButton = document.getElementById("overwritePresetBeforeRefreshButton");
+        const cancelPresetSaveButton = document.getElementById("cancelPresetSaveButton");
+        const refreshProgressDialog = document.getElementById("refreshProgressDialog");
+        const refreshStateBadge = document.getElementById("refreshStateBadge");
+        const refreshProgressMessage = document.getElementById("refreshProgressMessage");
+        const refreshBatchList = document.getElementById("refreshBatchList");
+        const cancelModelRefreshButton = document.getElementById("cancelModelRefreshButton");
         const batchTableDialog = document.getElementById("batchTableDialog");
         const batchTableDialogTitle = document.getElementById("batchTableDialogTitle");
         const batchTableDialogOptions = document.getElementById("batchTableDialogOptions");
@@ -326,7 +371,23 @@
 
         let draggedTable = null;
         let selectedActionButtonLock = null;
-    let activeBatchTablePickerCard = null;
+        let activeBatchTablePickerCard = null;
+        let activeRefreshJobId = null;
+        let initialPresetState = null;
+
+        function syncPageScrollLock() {
+            const hasOpenDialog = Array.from(document.querySelectorAll("dialog")).some((dialog) => dialog.open);
+            const shouldLockScroll = !loadingPopup.hidden || hasOpenDialog;
+
+            document.documentElement.classList.toggle("is-scroll-locked", shouldLockScroll);
+            document.body.classList.toggle("is-scroll-locked", shouldLockScroll);
+        }
+
+        const overlayStateObserver = new MutationObserver(syncPageScrollLock);
+        overlayStateObserver.observe(loadingPopup, {attributes: true, attributeFilter: ["hidden"]});
+        document.querySelectorAll("dialog").forEach((dialog) => {
+            overlayStateObserver.observe(dialog, {attributes: true, attributeFilter: ["open"]});
+        });
 
         function getSelectedPageButtons() {
             return Array.from(document.querySelectorAll("button"));
@@ -559,10 +620,12 @@
         function showLoadingPopup(message) {
             loadingPopupLabel.textContent = message;
             loadingPopup.hidden = false;
+            syncPageScrollLock();
         }
 
         function hideLoadingPopup() {
             loadingPopup.hidden = true;
+            syncPageScrollLock();
         }
 
         function setFetchAdvanceDataStatus(message, tone = "") {
@@ -1668,6 +1731,13 @@
             updateBatchCounts();
         }
 
+        function addEmptyBatch() {
+            const batchNumber = getBatchCards().length + 1;
+
+            batchList.append(createBatchCard(batchNumber));
+            updateBatchCounts();
+        }
+
         function renumberBatches() {
             getBatchCards().forEach((batchCard, index) => {
                 const batchNumber = index + 1;
@@ -1849,6 +1919,16 @@
             };
         }
 
+        function getComparablePresetState() {
+            const payload = buildSavedBatchesPayload();
+            delete payload.savedAt;
+            return JSON.stringify(payload);
+        }
+
+        function hasUnsavedPresetChanges() {
+            return !selectionPayload.presetId || getComparablePresetState() !== initialPresetState;
+        }
+
         function setPresetActionState(disabled, activeButton, activeText) {
             [createPresetButton, processTablesButton].filter(Boolean).forEach((button) => {
                 button.disabled = disabled;
@@ -1862,24 +1942,24 @@
                 createPresetButton.textContent = "Create New Preset";
             }
             processTablesButton.disabled = false;
-            processTablesButton.textContent = canOverwritePreset ? "Overwrite Preset" : "Create Preset";
+            processTablesButton.textContent = canOverwritePreset ? "Overwrite Preset" : "Save Preset";
         }
 
-        async function savePreset({createNew = false} = {}) {
+        async function savePreset({createNew = false, redirectAfterSave = true, confirmOverwrite = true} = {}) {
             const presetName = presetNameInput.value.trim();
             if (!presetName) {
                 alert("Enter a preset name before saving.");
                 presetNameInput.focus();
-                return;
+                return null;
             }
 
-            if (!createNew && canOverwritePreset && !window.confirm(`Overwrite preset "${presetName}"? This will replace the existing preset configuration.`)) {
-                return;
+            if (!createNew && canOverwritePreset && confirmOverwrite && !window.confirm(`Overwrite preset "${presetName}"? This will replace the existing preset configuration.`)) {
+                return null;
             }
 
             const payload = buildSavedBatchesPayload();
             const presetId = createNew || !canOverwritePreset ? "" : selectionPayload.presetId || "";
-            const activeButton = createNew ? createPresetButton : processTablesButton;
+            const activeButton = (createNew ? createPresetButton : processTablesButton) || processTablesButton;
             const activeText = createNew || !canOverwritePreset ? "Creating preset..." : "Overwriting preset...";
             payload.presetId = presetId;
             setPresetActionState(true, activeButton, activeText);
@@ -1896,11 +1976,155 @@
                     throw new Error(data.message || "Could not save preset.");
                 }
 
-                window.location.href = "/";
+                if (data.presetName) {
+                    presetNameInput.value = data.presetName;
+                    selectionPayload.presetName = data.presetName;
+                }
+
+                if (redirectAfterSave) {
+                    window.location.href = "/";
+                } else {
+                    selectionPayload.presetId = data.presetId;
+                    initialPresetState = getComparablePresetState();
+                    restorePresetActionState();
+                }
+                return data.presetId;
             } catch (error) {
                 restorePresetActionState();
                 alert(`Failed to save preset: ${error.message}`);
+                return null;
             }
+        }
+
+        function showPresetSaveDialog() {
+            const hasSavedPreset = Boolean(selectionPayload.presetId);
+            presetSaveDialogMessage.textContent = hasSavedPreset
+                ? `Preset "${presetNameInput.value.trim() || selectionPayload.presetName || "Untitled"}" has unsaved changes. Save the changes before starting the model refresh.`
+                : "This preset has not been saved. Save it before starting the model refresh.";
+            savePresetAsNewButton.textContent = hasSavedPreset ? "Save as New" : "Save Preset";
+            overwritePresetBeforeRefreshButton.hidden = !hasSavedPreset;
+            presetSaveDialog.showModal();
+        }
+
+        function showModelRefreshError(error) {
+            startModelRefreshButton.disabled = false;
+            refreshModelTablesStatus.dataset.tone = "error";
+            refreshModelTablesStatus.textContent = error.message || "Could not run model refresh.";
+            updateActionOutputVisibility();
+            if (refreshProgressDialog.open) {
+                refreshProgressMessage.textContent = refreshModelTablesStatus.textContent;
+            } else {
+                alert(refreshModelTablesStatus.textContent);
+            }
+        }
+
+        async function savePresetAndStartRefresh(createNew) {
+            const isFirstSave = !selectionPayload.presetId;
+            presetSaveDialog.close();
+            const presetId = await savePreset({
+                createNew,
+                redirectAfterSave: false,
+                confirmOverwrite: false,
+            });
+            if (!presetId) {
+                return;
+            }
+
+            if (isFirstSave) {
+                const savedPresetUrl = new URL(`/selected-tables/${encodeURIComponent(presetId)}`, window.location.origin);
+                savedPresetUrl.searchParams.set("startRefresh", "true");
+                window.location.assign(savedPresetUrl.toString());
+                return;
+            }
+
+            try {
+                await startModelRefresh(presetId);
+            } catch (error) {
+                showModelRefreshError(error);
+            }
+        }
+
+        function renderRefreshJob(job) {
+            refreshStateBadge.textContent = job.status;
+            refreshStateBadge.dataset.status = String(job.status || "").toLowerCase();
+            refreshProgressMessage.textContent = job.message || "Refresh status updated.";
+            refreshBatchList.replaceChildren();
+
+            (job.batches || []).forEach((batch, batchIndex) => {
+                const section = document.createElement("section");
+                section.className = "refresh-batch-status";
+
+                const heading = document.createElement("div");
+                heading.className = "refresh-batch-heading";
+                const title = document.createElement("strong");
+                title.textContent = batch.name || `Batch ${batchIndex + 1}`;
+                const state = document.createElement("span");
+                state.className = "refresh-item-state";
+                state.dataset.status = String(batch.status || "Pending").toLowerCase();
+                state.textContent = batch.status || "Pending";
+                heading.append(title, state);
+
+                const tables = document.createElement("ul");
+                tables.className = "refresh-table-status-list";
+                (batch.tables || []).forEach((table) => {
+                    const item = document.createElement("li");
+                    const name = document.createElement("span");
+                    name.textContent = table.name;
+                    const tableState = document.createElement("span");
+                    tableState.className = "refresh-item-state";
+                    tableState.dataset.status = String(table.status || "Pending").toLowerCase();
+                    tableState.textContent = table.status || "Pending";
+                    item.append(name, tableState);
+                    tables.append(item);
+                });
+                section.append(heading, tables);
+                refreshBatchList.append(section);
+            });
+
+            const terminal = ["Completed", "Failed", "Cancelled"].includes(job.status);
+            cancelModelRefreshButton.textContent = terminal ? "Close" : "Cancel the Refresh";
+            cancelModelRefreshButton.disabled = job.status === "Cancelling";
+        }
+
+        async function getRefreshJob(jobId) {
+            const response = await fetch(`/api/refresh-jobs/${encodeURIComponent(jobId)}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || "Could not read refresh status.");
+            }
+            return data;
+        }
+
+        async function pollRefreshJob(jobId) {
+            while (activeRefreshJobId === jobId) {
+                const job = await getRefreshJob(jobId);
+                renderRefreshJob(job);
+                if (["Completed", "Failed", "Cancelled"].includes(job.status)) {
+                    activeRefreshJobId = null;
+                    startModelRefreshButton.disabled = false;
+                    return;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 2000));
+            }
+        }
+
+        async function startModelRefresh(presetId) {
+            startModelRefreshButton.disabled = true;
+            const response = await fetch("/api/refresh-jobs", {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                body: JSON.stringify({presetId}),
+            });
+            const job = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                startModelRefreshButton.disabled = false;
+                throw new Error(job.message || "Could not start model refresh.");
+            }
+
+            activeRefreshJobId = job.id;
+            renderRefreshJob(job);
+            refreshProgressDialog.showModal();
+            await pollRefreshJob(job.id);
         }
 
         getDropZones().forEach(registerDropZone);
@@ -1914,11 +2138,53 @@
         restoreSavedAdvancedTableDetails();
         updateBatchCounts();
         syncTableListEmptyStates();
+        initialPresetState = getComparablePresetState();
 
         aiRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(aiRefreshButton, distributeTablesAcrossBatches));
         refreshModelTablesButton.addEventListener("click", () => runWithRestButtonsLocked(refreshModelTablesButton, refreshModelTables));
         fetchAdvanceDataButton.addEventListener("click", () => runWithRestButtonsLocked(fetchAdvanceDataButton, fetchAdvanceData));
-        startModelRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(startModelRefreshButton, () => {}));
+        startModelRefreshButton.addEventListener("click", async () => {
+            if (activeRefreshJobId) {
+                return;
+            }
+            if (hasUnsavedPresetChanges()) {
+                showPresetSaveDialog();
+                return;
+            }
+            try {
+                await startModelRefresh(selectionPayload.presetId);
+            } catch (error) {
+                showModelRefreshError(error);
+            }
+        });
+        savePresetAsNewButton.addEventListener("click", () => savePresetAndStartRefresh(true));
+        overwritePresetBeforeRefreshButton.addEventListener("click", () => savePresetAndStartRefresh(false));
+        cancelPresetSaveButton.addEventListener("click", () => presetSaveDialog.close());
+        cancelModelRefreshButton.addEventListener("click", async () => {
+            if (!activeRefreshJobId) {
+                refreshProgressDialog.close();
+                return;
+            }
+            cancelModelRefreshButton.disabled = true;
+            try {
+                const response = await fetch(`/api/refresh-jobs/${encodeURIComponent(activeRefreshJobId)}`, {
+                    method: "DELETE",
+                });
+                const job = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(job.message || "Could not cancel refresh.");
+                }
+                renderRefreshJob(job);
+            } catch (error) {
+                cancelModelRefreshButton.disabled = false;
+                refreshProgressMessage.textContent = error.message || "Could not cancel refresh.";
+            }
+        });
+        refreshProgressDialog.addEventListener("cancel", (event) => {
+            if (activeRefreshJobId) {
+                event.preventDefault();
+            }
+        });
         closeBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
         cancelBatchTableDialogButton.addEventListener("click", closeBatchTableDialog);
         saveBatchTableDialogButton.addEventListener("click", saveBatchTableDialogChanges);
@@ -1939,15 +2205,20 @@
         window.addEventListener("resize", () => {
             document.querySelectorAll(".table-batch-label").forEach(updateBatchScrollControls);
         });
-        addBatchButton.addEventListener("click", () => {
-            const batchNumber = getBatchCards().length + 1;
-            batchList.append(createBatchCard(batchNumber));
-            updateBatchCounts();
-        });
+        addBatchButton.addEventListener("click", addEmptyBatch);
+        createNewBatchButton.addEventListener("click", addEmptyBatch);
         if (createPresetButton) {
             createPresetButton.addEventListener("click", () => savePreset({createNew: true}));
         }
         processTablesButton.addEventListener("click", () => savePreset());
+
+        const shouldStartRefreshAfterSave = new URLSearchParams(window.location.search).get("startRefresh") === "true";
+        if (shouldStartRefreshAfterSave && selectionPayload.presetId) {
+            const savedPresetUrl = new URL(window.location.href);
+            savedPresetUrl.searchParams.delete("startRefresh");
+            window.history.replaceState({}, "", `${savedPresetUrl.pathname}${savedPresetUrl.search}${savedPresetUrl.hash}`);
+            startModelRefresh(selectionPayload.presetId).catch(showModelRefreshError);
+        }
 
         // ── Session restoration ──────────────────────────────────────────
         (function() {

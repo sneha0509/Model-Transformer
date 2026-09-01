@@ -55,6 +55,12 @@ body {
     transition: background 160ms ease, color 160ms ease;
 }
 
+html.is-scroll-locked,
+body.is-scroll-locked {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 button,
 input,
 select {
@@ -1687,7 +1693,7 @@ h3 {
 }
 
 .table-drag-list {
-    --table-list-row-height: 52px;
+    --table-list-row-height: 64px;
     grid-auto-rows: minmax(var(--table-list-row-height), auto);
 }
 
@@ -2139,6 +2145,151 @@ h3 {
 
 .batch-table-dialog::backdrop {
     background: rgba(15, 23, 42, 0.46);
+}
+
+.preset-save-dialog,
+.refresh-progress-dialog {
+    width: min(720px, calc(100vw - 32px));
+    max-height: min(760px, calc(100vh - 48px));
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    color: var(--text);
+    background: transparent;
+}
+
+.preset-save-dialog::backdrop,
+.refresh-progress-dialog::backdrop {
+    background: color-mix(in srgb, #0f172a 56%, transparent);
+    backdrop-filter: blur(6px);
+}
+
+.preset-save-dialog-inner,
+.refresh-progress-inner {
+    display: grid;
+    gap: 14px;
+    max-height: min(760px, calc(100vh - 48px));
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.3);
+}
+
+.preset-save-dialog-message {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+
+.preset-save-dialog-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.refresh-state-badge,
+.refresh-item-state {
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: var(--muted);
+    background: var(--surface);
+    font-size: 0.7rem;
+    font-weight: 900;
+}
+
+.refresh-state-badge[data-status="running"],
+.refresh-state-badge[data-status="cancelling"],
+.refresh-item-state[data-status="running"] {
+    color: var(--primary-strong);
+    background: var(--primary-soft);
+}
+
+.refresh-state-badge[data-status="completed"],
+.refresh-item-state[data-status="completed"] {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 12%, var(--surface));
+}
+
+.refresh-state-badge[data-status="failed"],
+.refresh-state-badge[data-status="cancelled"],
+.refresh-item-state[data-status="failed"],
+.refresh-item-state[data-status="cancelled"] {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.refresh-progress-message {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.refresh-batch-list {
+    display: grid;
+    gap: 10px;
+    max-height: min(520px, 58vh);
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.refresh-batch-status {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.refresh-batch-heading,
+.refresh-table-status-list li,
+.refresh-progress-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.refresh-table-status-list {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.refresh-table-status-list li {
+    min-height: 34px;
+    padding: 5px 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.refresh-table-status-list li > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.refresh-progress-actions {
+    justify-content: flex-end;
+}
+
+.danger-action-button {
+    background: var(--danger);
+}
+
+.danger-action-button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 82%, #000000);
 }
 
 .batch-table-dialog-inner {
@@ -2615,8 +2766,10 @@ h3 {
 }
 
 .new-batch-drop-zone .batch-new-table-ghost {
+    width: 100%;
     min-height: 38px;
     margin-top: 0;
+    cursor: pointer;
 }
 
 .batch-table-item {

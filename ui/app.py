@@ -7,10 +7,12 @@ from azure.identity import CredentialUnavailableError
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
+from core.batch_processing import batch_refresh_manager
 from core.normalization import normalize_selected_tables_payload
 from core.orchestrator import get_advanced_table_details, get_asset_details, get_login_context, get_workspace_assets
 from core.presets import (
     delete_preset as delete_saved_preset,
+    get_preset_path,
     list_presets as list_saved_presets,
     load_preset,
     save_preset as create_saved_preset,
@@ -75,9 +77,10 @@ def save_preset():
     payload = get_request_payload()
     try:
         preset_id = create_saved_preset(payload)
+        saved = load_preset(preset_id)
     except OSError as exc:
         return jsonify({"message": f"Could not save preset: {exc}"}), 500
-    return jsonify({"presetId": preset_id})
+    return jsonify({"presetId": preset_id, "presetName": saved.get("presetName", "")})
 
 
 @model_transformer.put("/api/presets/<preset_id>")
@@ -107,6 +110,38 @@ def delete_preset(preset_id):
         return jsonify({"message": f"Could not delete preset: {exc}"}), 500
 
     return jsonify({"message": "Preset deleted."})
+
+
+@model_transformer.post("/api/refresh-jobs")
+def start_refresh_job():
+    payload = get_request_payload()
+    preset_id = payload.get("presetId") if isinstance(payload, dict) else None
+    try:
+        preset_path = get_preset_path(preset_id)
+        job = batch_refresh_manager.start(preset_path)
+    except (ValueError, json.JSONDecodeError) as exc:
+        return jsonify({"message": str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({"message": str(exc)}), 404
+    except OSError as exc:
+        return jsonify({"message": f"Could not read the saved preset: {exc}"}), 500
+    return jsonify(job), 202
+
+
+@model_transformer.get("/api/refresh-jobs/<job_id>")
+def refresh_job_status(job_id):
+    job = batch_refresh_manager.get(job_id)
+    if not job:
+        return jsonify({"message": "Refresh job not found."}), 404
+    return jsonify(job)
+
+
+@model_transformer.delete("/api/refresh-jobs/<job_id>")
+def cancel_refresh_job(job_id):
+    job = batch_refresh_manager.cancel(job_id)
+    if not job:
+        return jsonify({"message": "Refresh job not found."}), 404
+    return jsonify(job)
 
 
 @model_transformer.post("/api/login")
