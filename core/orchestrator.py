@@ -41,3 +41,8 @@ def get_advanced_table_details(workspace_id, model_id, selected_tables, all_tabl
     power_bi_client = create_power_bi_client()
     fabric_client = create_fabric_client()
     return get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, model_id, selected_tables, all_tables)
+
+
+def get_semantic_model_definition(workspace_id, model_id):
+    """Return the selected semantic model definition in TMDL format."""
+    return create_fabric_client().get_semantic_model_definition(workspace_id, model_id)

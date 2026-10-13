@@ -6,6 +6,8 @@ import requests
 
 
 FABRIC_ITEM_DEFINITION_URL = "https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items/{item_id}/getDefinition"
+FABRIC_SEMANTIC_MODEL_DEFINITION_URL = "https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/semanticModels/{model_id}/getDefinition"
+FABRIC_UPSTREAM_RELATIONS_URL = "https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items/{item_id}/relations/upstream"
 
 
 class FabricClient:
@@ -42,6 +44,74 @@ class FabricClient:
 
         response.raise_for_status()
         return response.json()
+
+    def get_upstream_relations(self, workspace_id, item_id):
+        """Return the Fabric item relations response for an item's upstream dependencies."""
+        if not self.access_token or not workspace_id or not item_id:
+            raise ValueError("Fabric access token, workspace ID, and item ID are required for lineage.")
+
+        url = FABRIC_UPSTREAM_RELATIONS_URL.format(
+            workspace_id=workspace_id,
+            item_id=item_id,
+        )
+        response = requests.get(
+            url,
+            headers=self.headers,
+            params={"beta": "true"},
+            timeout=30,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_semantic_model_definition(self, workspace_id, model_id):
+        """Return a semantic model definition in TMDL format."""
+        if not self.access_token or not workspace_id or not model_id:
+            raise ValueError(
+                "Fabric access token, workspace ID, and model ID are required for a model definition."
+            )
+
+        url = FABRIC_SEMANTIC_MODEL_DEFINITION_URL.format(
+            workspace_id=workspace_id,
+            model_id=model_id,
+        )
+        response = requests.post(
+            url,
+            headers=self.json_headers,
+            params={"format": "TMDL"},
+            timeout=30,
+        )
+        if response.status_code == 202:
+            return self.get_required_operation_result(response.headers.get("Location"))
+
+        response.raise_for_status()
+        return response.json()
+
+    def get_required_operation_result(self, operation_url):
+        """Poll a Fabric operation and return its required result payload."""
+        if not operation_url:
+            raise RuntimeError("Fabric did not return an operation URL for the model definition.")
+
+        for attempt in range(10):
+            response = requests.get(operation_url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            operation = response.json()
+            status = operation.get("status")
+            if status == "Succeeded":
+                result_url = response.headers.get("Location") or f"{operation_url.rstrip('/')}/result"
+                result_response = requests.get(result_url, headers=self.headers, timeout=30)
+                result_response.raise_for_status()
+                return result_response.json()
+            if status in {"Failed", "Cancelled"}:
+                raise RuntimeError(f"Fabric model definition operation {status.lower()}.")
+            if attempt < 9:
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    delay = max(float(retry_after), 0.0)
+                except (TypeError, ValueError):
+                    delay = 1.0
+                time.sleep(delay)
+
+        raise TimeoutError("Timed out waiting for the Fabric model definition.")
 
     def get_operation_result(self, operation_url):
         """Poll a Fabric operation URL and return its final JSON result when it succeeds."""
