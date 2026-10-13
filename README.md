@@ -69,7 +69,9 @@ batch plan. Copilot evaluates row count, column count, partition count, and
 partition TMDL complexity. Adjacent simple or moderate tables can share a
 batch, while expensive tables can be isolated. The backend rejects any plan
 that omits, duplicates, or reorders precedence tables. Final plans include the
-workspace and model IDs and are saved under `output/ai_batch_creation`.
+workspace and model IDs and are saved under `output/ai_batch_creation`. Each
+plan also carries the default hybrid refresh settings: transactional commit,
+30-minute timeout, three retries, and maximum parallelism of four.
 
 The implementation uses the official GitHub Copilot SDK and signed-in-user
 authentication. It does not accept or transmit a raw Copilot token. In the UI,
@@ -109,5 +111,8 @@ In the UI, **AI Powered Refresh** keeps the full-screen loading overlay active
 while it performs all phases in sequence. It saves table metadata under
 `output/ai_refresh_metadata`, creates validated precedence under
 `output/ai_table_precedence`, then creates and applies the optimized batch plan
-from `output/ai_batch_creation`. The screen is unlocked only after all phases
-complete or an error is displayed.
+from `output/ai_batch_creation`. That exact saved batch JSON is handed to the
+existing `BatchRefreshManager`, which uses the same grouped sub-batch and
+individual retry strategy as **Start Model Refresh**. The existing refresh
+progress dialog opens and remains active while the job is running. The screen
+is unlocked only after all phases complete or an error is displayed.

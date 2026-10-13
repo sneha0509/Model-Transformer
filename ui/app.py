@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from core.ai_batch_creation import (
     DEFAULT_INPUT_DIRECTORY as AI_BATCH_INPUT_DIRECTORY,
+    DEFAULT_OUTPUT_DIRECTORY as AI_BATCH_OUTPUT_DIRECTORY,
     generate_ai_batches,
 )
 from core.ai_powered_refresh import get_ai_refresh_metadata
@@ -124,15 +125,30 @@ def delete_preset(preset_id):
 def start_refresh_job():
     payload = get_request_payload()
     preset_id = payload.get("presetId") if isinstance(payload, dict) else None
+    ai_batch_file = (
+        str(payload.get("aiBatchFile") or "").strip()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if ai_batch_file and (
+        Path(ai_batch_file).name != ai_batch_file
+        or Path(ai_batch_file).suffix.lower() != ".json"
+    ):
+        return jsonify({"message": "Invalid AI batch creation file."}), 400
+
     try:
-        preset_path = get_preset_path(preset_id)
-        job = batch_refresh_manager.start(preset_path)
+        refresh_plan_path = (
+            AI_BATCH_OUTPUT_DIRECTORY / ai_batch_file
+            if ai_batch_file
+            else get_preset_path(preset_id)
+        )
+        job = batch_refresh_manager.start(refresh_plan_path)
     except (ValueError, json.JSONDecodeError) as exc:
         return jsonify({"message": str(exc)}), 400
     except FileNotFoundError as exc:
         return jsonify({"message": str(exc)}), 404
     except OSError as exc:
-        return jsonify({"message": f"Could not read the saved preset: {exc}"}), 500
+        return jsonify({"message": f"Could not read the refresh configuration: {exc}"}), 500
     return jsonify(job), 202
 
 

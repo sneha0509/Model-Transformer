@@ -19,22 +19,77 @@ DEFAULT_OUTPUT_DIRECTORY = PROJECT_ROOT / "output" / "ai_batch_creation"
 DEFAULT_COPILOT_MODEL = "gpt-5"
 
 SYSTEM_PROMPT = """
-You create efficient semantic-model refresh batches from an already validated
-table precedence list.
+You are a table-batching and execution-planning assistant. Create an execution plan using the supplied table order, dependencies, row counts, query code, and batch-capacity limits.
 
-Rules:
-1. Return every table exactly once.
-2. Preserve precedence exactly. Reading batches in order and tables within each
-   batch must reproduce the input table order.
-3. Use rows, columns, partition count, and every partition TMDL query to
-   estimate refresh cost and query complexity.
-4. Group adjacent simple or moderate tables when their combined refresh cost is
-   reasonable.
-5. Put a table in its own batch when its volume or partition query is complex
-   enough that grouping it could delay or destabilize other tables.
-6. Do not invent, omit, duplicate, or reorder tables.
-7. Prefer the fewest safe batches, but correctness and predictable execution
-   are more important than minimizing the batch count.
+Follow these rules strictly:
+
+1. PRESERVE TABLE PRECEDENCE
+- Maintain the supplied table order and dependency constraints.
+- Never reorder or skip tables to improve batching efficiency.
+- Execute each table only after its prerequisite tables have completed.
+- Tables in the same batch must still execute in the required order. Do not assume that sharing a batch permits parallel execution.
+
+2. ISOLATE LARGE TABLES WITH SIMPLE QUERIES
+- A simple query contains none of the complexity cases listed in Rule 3.
+- If a simple query processes more than 10,000,000 rows, place its table in one dedicated batch.
+- Process the entire table in that batch; do not split it across batches or include other tables.
+
+3. ISOLATE TABLES WITH COMPLEX QUERIES
+Treat a query as complex if it contains any of these cases, ranked from highest to lowest severity:
+
+1) Row-by-row processing.
+2) Correlated subqueries.
+3) Joins, especially large joins or many-to-many joins.
+4) Recursive queries.
+5) Remote calls or cross-system data movement.
+6) Transformations that prevent source-side filtering or pushdown.
+7) Filters or joins that may prevent efficient index use.
+8) Repeated scans of the same data.
+9) Expensive scalar functions or user-defined functions.
+10) Window functions.
+11) ORDER BY and large sorts.
+12) DISTINCT.
+13) GROUP BY and aggregations.
+14) JSON, XML, regex, or large-string processing.
+
+- Place each table with a complex query in a dedicated batch, regardless of its row count.
+- Do not include other tables in that batch, even if capacity remains.
+- If multiple cases apply, classify the query using the highest-severity matching case: the lowest numerical rank.
+- Severity determines classification, not execution order. Never prioritize a higher-severity table ahead of its required position.
+
+4. GROUP OTHER ELIGIBLE TABLES
+- Tables with simple queries that do not exceed 10,000,000 rows may share a batch if they fit within the supplied batch-capacity limits.
+- Examine tables sequentially in their required order.
+- Add the next eligible table to the current shared batch only if capacity permits.
+- If capacity would be exceeded, close the current batch and start another.
+- If the next table requires dedicated processing under Rule 2 or Rule 3, close the current shared batch, place that table in its own batch, and then resume with the following table.
+- Never combine tables from opposite sides of a dedicated batch by skipping over the isolated table.
+- Dedicated-batch rules override shared-batch capacity limits; never split a table that must be processed in one dedicated batch.
+
+5. HANDLE MISSING OR CONFLICTING INPUTS
+- Do not invent row counts, query characteristics, dependencies, or batch-capacity limits.
+- If necessary information is missing, request clarification before finalizing the affected batches.
+- If the supplied table order conflicts with dependencies, report the conflict and request clarification rather than silently reordering tables.
+
+""".strip()
+
+BATCH_REQUEST_PROMPT = """
+Create refresh batches for the ordered table metadata below.
+
+Field guide:
+- precedence: mandatory position; it cannot be changed.
+- tableName: exact value that must be returned.
+- rows: estimated table row count.
+- columns: table width.
+- partitionCount: number of refresh partitions.
+- modelDefinition.partitionQueries: TMDL containing the source expression or
+  query for each partition. Inspect every available query when classifying
+  complexity.
+
+Perform the cost assessment internally, place batch boundaries only between
+adjacent tables, and return the required JSON.
+
+Ordered table metadata:
 """.strip()
 
 
@@ -130,7 +185,7 @@ def request_batch_plan(precedence, model=None, client_factory=CopilotClient):
     }
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
-        "Create refresh batches for this ordered table metadata:\n"
+        f"{BATCH_REQUEST_PROMPT}\n"
         f"{json.dumps({'tablePrecedence': precedence['tablePrecedence']}, ensure_ascii=False)}"
     )
     response_content = asyncio.run(
@@ -216,6 +271,12 @@ def build_batch_output(precedence, llm_batches, source_file_name):
         "modelId": str(precedence.get("modelId") or ""),
         "sourcePrecedenceFile": str(source_file_name),
         "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
+        "batchCreationSettings": {
+            "timeoutMinutes": 30,
+            "commitMode": "transactional",
+            "maxParallelism": 4,
+            "retryCount": 3,
+        },
         "batches": normalized_batches,
     }
 
