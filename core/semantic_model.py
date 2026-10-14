@@ -8,6 +8,7 @@ from core.normalization import (
     infer_connection_mode,
     normalize_datasource_types,
     normalize_last_refresh,
+    normalize_lineage_items,
     normalize_model,
     normalize_push_tables,
     normalize_refresh_schedule,
@@ -40,7 +41,8 @@ SELECTCOLUMNS(
     "ToTable", [ToTable],
     "ToColumn", [ToColumn],
     "ToCardinality", [ToCardinality],
-    "IsActive", [IsActive]
+    "IsActive", [IsActive],
+    "Direction", [CrossFilteringBehavior]
 )
 ORDER BY [FromTable], [ToTable]
 """.strip()
@@ -84,6 +86,7 @@ def get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, da
         selected_table_names,
         visible_table_names or selected_table_names,
     )
+    lineage = get_direct_upstream_lineage(fabric_client, workspace_id, dataset_id)
 
     tables = []
     for table_name in selected_table_names:
@@ -98,7 +101,28 @@ def get_advanced_table_metadata(power_bi_client, fabric_client, workspace_id, da
             "relatedTables": relationship_summary.get("relatedTables", []),
         })
 
-    return {"tables": tables}
+    return {
+        "tables": tables,
+        "lineage": lineage,
+    }
+
+
+def get_direct_upstream_lineage(fabric_client, workspace_id, item_id):
+    """Return only items connected directly upstream of the requested Fabric item."""
+    response = fabric_client.get_upstream_relations(workspace_id, item_id)
+    relations = response.get("relations") if isinstance(response, dict) else []
+    items = response.get("items") if isinstance(response, dict) else []
+    direct_upstream_ids = {
+        str(relation.get("dependentOnItemId") or "").strip().casefold()
+        for relation in relations if isinstance(relation, dict)
+        and str(relation.get("itemId") or "").strip().casefold() == str(item_id).strip().casefold()
+        and str(relation.get("dependentOnItemId") or "").strip()
+    }
+
+    return normalize_lineage_items([
+        item for item in items if isinstance(item, dict)
+        and str(item.get("id") or "").strip().casefold() in direct_upstream_ids
+    ])
 
 
 def normalize_table_name_list(tables):
@@ -187,7 +211,7 @@ def add_related_table(related_tables, source_table, related_table, row):
         "toColumn": get_dax_row_value(row, "ToColumn"),
         "toCardinality": get_dax_row_value(row, "ToCardinality"),
         "isActive": get_dax_bool_value(row, "IsActive"),
-        "direction": "from" if source_table == get_dax_row_value(row, "FromTable") else "to",
+        "direction": get_dax_row_value(row, "Direction"),
     })
 
 

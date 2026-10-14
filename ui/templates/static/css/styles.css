@@ -2207,7 +2207,9 @@ h3 {
 
 .refresh-state-badge[data-status="running"],
 .refresh-state-badge[data-status="cancelling"],
-.refresh-item-state[data-status="running"] {
+.refresh-item-state[data-status="processing"],
+.refresh-item-state[data-status="running"],
+.refresh-item-state[data-status="retrying"] {
     color: var(--primary-strong);
     background: var(--primary-soft);
 }
@@ -2251,12 +2253,38 @@ h3 {
 }
 
 .refresh-batch-heading,
+.refresh-sub-batch-heading,
 .refresh-table-status-list li,
 .refresh-progress-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.refresh-sub-batch-list {
+    display: grid;
+    gap: 8px;
+}
+
+.refresh-sub-batch-status {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--surface-strong) 55%, var(--surface));
+}
+
+.refresh-sub-batch-heading {
+    min-height: 28px;
+}
+
+.refresh-attempt-states {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
 }
 
 .refresh-table-status-list {
@@ -2278,6 +2306,10 @@ h3 {
 .refresh-table-status-list li > span:first-child {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.refresh-table-status-list li > .refresh-attempt-states {
+    flex-shrink: 0;
 }
 
 .refresh-progress-actions {
@@ -3834,4 +3866,3 @@ tr:last-child td {
     cursor: not-allowed;
     opacity: 0.58;
 }
-

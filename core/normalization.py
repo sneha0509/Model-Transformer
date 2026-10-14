@@ -150,6 +150,37 @@ def normalize_table_names(tables):
     return normalized_tables
 
 
+def normalize_lineage_items(lineage):
+    """Return unique direct-upstream items with only the persisted lineage fields."""
+    normalized_lineage = []
+    seen_items = set()
+    if not isinstance(lineage, list):
+        return normalized_lineage
+
+    for item in lineage:
+        if not isinstance(item, dict):
+            continue
+
+        item_id = str(item.get("id") or "").strip()
+        workspace_id = str(item.get("workspaceId") or "").strip()
+        if not item_id or not workspace_id:
+            continue
+
+        item_key = (workspace_id.casefold(), item_id.casefold())
+        if item_key in seen_items:
+            continue
+
+        seen_items.add(item_key)
+        normalized_lineage.append({
+            "id": item_id,
+            "type": str(item.get("type") or "").strip(),
+            "displayName": str(item.get("displayName") or "").strip(),
+            "workspaceId": workspace_id,
+        })
+
+    return normalized_lineage
+
+
 def normalize_advanced_table_details(payload, table_names):
     """Return saved advanced metadata keyed to all current model tables."""
     payload = payload if isinstance(payload, dict) else {}
@@ -245,6 +276,7 @@ def normalize_selected_tables_payload(payload):
         "selectedTables": normalized_selected_tables,
         "selectedTableDetails": selected_table_details,
         "advancedTableDetails": advanced_table_details,
+        "lineage": normalize_lineage_items(payload.get("lineage")),
         "allTables": normalized_all_tables,
         "unselectedTables": normalized_unselected_tables,
         "batchCreationSettings": saved_batches["batchCreationSettings"],
@@ -360,6 +392,7 @@ def normalize_saved_batches_payload(payload):
         "assetCategory": str(payload.get("assetCategory") or payload.get("category") or "Model"),
         "selectedTables": selected_tables,
         "advancedTableDetails": normalize_advanced_table_details(payload, all_tables),
+        "lineage": normalize_lineage_items(payload.get("lineage")),
         "allTables": all_tables,
         "unselectedTables": unselected_tables,
         "unassignedTables": unassigned_tables,

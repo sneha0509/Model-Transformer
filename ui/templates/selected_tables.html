@@ -1613,6 +1613,7 @@
                 const advancedTables = Array.isArray(data.tables) ? data.tables : [];
                 const updatedCount = advancedTables.filter(updateSelectedTableAdvancedData).length;
                 selectionPayload.advancedTableDetails = getAdvancedTableDetails();
+                selectionPayload.lineage = Array.isArray(data.lineage) ? data.lineage : [];
                 setFetchAdvanceDataStatus(
                     `Updated advanced data for ${updatedCount} selected ${updatedCount === 1 ? "table" : "tables"}.`,
                     "success",
@@ -1845,18 +1846,141 @@
             return card;
         }
 
-        function distributeTablesAcrossBatches() {
-            const items = getTableItems();
-            const zones = Array.from(document.querySelectorAll(".batch-drop-zone"));
+        function applyAiBatchPlan(batches) {
+            batchList.replaceChildren();
+            batches.forEach((batch, index) => {
+                const batchCard = createBatchCard(index + 1);
+                const dropZone = batchCard.querySelector(".batch-drop-zone");
 
-            if (!items.length || !zones.length) {
+                batchList.append(batchCard);
+                (batch.tables || []).forEach((tableName) => {
+                    assignTableNameToBatch(tableName, dropZone);
+                });
+            });
+            updateBatchCounts();
+        }
+
+        async function prepareAiPoweredRefresh() {
+            const workspaceId = selectionPayload.workspaceId;
+            const modelId = selectionPayload.datasetId || selectionPayload.modelId;
+            const selectedTables = getTableItems().map(getTableName);
+            const allTables = Array.isArray(selectionPayload.allTables) && selectionPayload.allTables.length
+                ? selectionPayload.allTables
+                : [...selectedTables, ...getUnselectedTableItems().map(getTableName)];
+
+            if (!selectedTables.length) {
+                setFetchAdvanceDataStatus("Select at least one table before preparing an AI-powered refresh.", "error");
+                return;
+            }
+            if (!workspaceId || workspaceId === "Unavailable" || !modelId || modelId === "Unavailable") {
+                setFetchAdvanceDataStatus("Cannot prepare an AI-powered refresh because workspace or model details are unavailable.", "error");
                 return;
             }
 
-            items.forEach((item, index) => {
-                assignTableToBatch(item, zones[index % zones.length]);
-            });
-            updateBatchCounts();
+            aiRefreshButton.textContent = "Analyzing...";
+            const fetchMessage = `Preparing AI refresh metadata for ${selectedTables.length} selected ${selectedTables.length === 1 ? "table" : "tables"}...`;
+            showLoadingPopup(fetchMessage);
+            setFetchAdvanceDataStatus(fetchMessage);
+
+            try {
+                const response = await fetch(
+                    `/api/workspaces/${encodeURIComponent(workspaceId)}/models/${encodeURIComponent(modelId)}/ai-refresh-metadata`,
+                    {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                        body: JSON.stringify({
+                            workspaceName: selectionPayload.workspaceName || "",
+                            modelName: selectionPayload.modelName || "",
+                            selectedTables,
+                            allTables,
+                        }),
+                    },
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not prepare AI refresh metadata.");
+                }
+
+                selectionPayload.aiRefreshMetadata = data;
+                selectionPayload.lineage = Array.isArray(data.lineage) ? data.lineage : [];
+                const loginMessage = "Checking GitHub Copilot sign-in. Your browser will open automatically if authentication is required...";
+                aiRefreshButton.textContent = "Checking Copilot...";
+                showLoadingPopup(loginMessage);
+                setFetchAdvanceDataStatus(loginMessage);
+
+                const loginResponse = await fetch(
+                    "/api/copilot-login",
+                    {
+                        method: "POST",
+                        headers: {"Accept": "application/json"},
+                    },
+                );
+                const loginData = await loginResponse.json();
+
+                if (!loginResponse.ok) {
+                    throw new Error(loginData.message || "Could not authenticate with GitHub Copilot.");
+                }
+
+                const precedenceMessage = "Setting table precedence from the latest AI refresh metadata...";
+                aiRefreshButton.textContent = "Setting precedence...";
+                showLoadingPopup(precedenceMessage);
+                setFetchAdvanceDataStatus(precedenceMessage);
+
+                const precedenceResponse = await fetch(
+                    "/api/ai-table-precedence",
+                    {
+                        method: "POST",
+                        headers: {"Accept": "application/json"},
+                    },
+                );
+                const precedenceData = await precedenceResponse.json();
+
+                if (!precedenceResponse.ok) {
+                    throw new Error(precedenceData.message || "Could not set AI table precedence.");
+                }
+
+                selectionPayload.aiTablePrecedence = precedenceData;
+                const batchMessage = "Creating optimized refresh batches from table precedence...";
+                aiRefreshButton.textContent = "Creating batches...";
+                showLoadingPopup(batchMessage);
+                setFetchAdvanceDataStatus(batchMessage);
+
+                const batchResponse = await fetch(
+                    "/api/ai-batch-creation",
+                    {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                        body: JSON.stringify({
+                            precedenceFile: precedenceData.outputFile || "",
+                        }),
+                    },
+                );
+                const batchData = await batchResponse.json();
+
+                if (!batchResponse.ok) {
+                    throw new Error(batchData.message || "Could not create AI refresh batches.");
+                }
+
+                selectionPayload.aiBatchCreation = batchData;
+                maxParallelismInput.value = "4";
+                applyAiBatchPlan(batchData.batches || []);
+                setFetchAdvanceDataStatus(
+                    `Created ${batchData.batches.length} optimized refresh ${batchData.batches.length === 1 ? "batch" : "batches"}. Starting the hybrid model refresh...`,
+                    "success",
+                );
+                aiRefreshButton.textContent = "Starting refresh...";
+                hideLoadingPopup();
+                await startModelRefresh("", batchData.outputFile || "");
+            } catch (error) {
+                setFetchAdvanceDataStatus(error.message, "error");
+                if (refreshProgressDialog.open) {
+                    showModelRefreshError(error);
+                }
+            } finally {
+                hideLoadingPopup();
+                aiRefreshButton.textContent = "AI Powered Refresh";
+            }
         }
 
         function getPositiveInteger(input, fallbackValue) {
@@ -1905,6 +2029,7 @@
                 assetCategory: selectionPayload.assetCategory || selectionPayload.category || "Model",
                 selectedTables: getTableItems().map(getTableName),
                 advancedTableDetails: getAdvancedTableDetails(),
+                lineage: Array.isArray(selectionPayload.lineage) ? selectionPayload.lineage : [],
                 allTables: selectionPayload.allTables || [
                     ...getTableItems().map(getTableName),
                     ...getUnselectedTableItems().map(getTableName),
@@ -2045,6 +2170,14 @@
         }
 
         function renderRefreshJob(job) {
+            function createRefreshState(status, prefix = "") {
+                const state = document.createElement("span");
+                state.className = "refresh-item-state";
+                state.dataset.status = String(status || "Pending").toLowerCase();
+                state.textContent = prefix ? `${prefix}: ${status || "Pending"}` : status || "Pending";
+                return state;
+            }
+
             refreshStateBadge.textContent = job.status;
             refreshStateBadge.dataset.status = String(job.status || "").toLowerCase();
             refreshProgressMessage.textContent = job.message || "Refresh status updated.";
@@ -2058,26 +2191,61 @@
                 heading.className = "refresh-batch-heading";
                 const title = document.createElement("strong");
                 title.textContent = batch.name || `Batch ${batchIndex + 1}`;
-                const state = document.createElement("span");
-                state.className = "refresh-item-state";
-                state.dataset.status = String(batch.status || "Pending").toLowerCase();
-                state.textContent = batch.status || "Pending";
+                const state = createRefreshState(batch.status);
                 heading.append(title, state);
 
-                const tables = document.createElement("ul");
-                tables.className = "refresh-table-status-list";
-                (batch.tables || []).forEach((table) => {
-                    const item = document.createElement("li");
-                    const name = document.createElement("span");
-                    name.textContent = table.name;
-                    const tableState = document.createElement("span");
-                    tableState.className = "refresh-item-state";
-                    tableState.dataset.status = String(table.status || "Pending").toLowerCase();
-                    tableState.textContent = table.status || "Pending";
-                    item.append(name, tableState);
-                    tables.append(item);
-                });
-                section.append(heading, tables);
+                section.append(heading);
+                if ((batch.subBatches || []).length) {
+                    const subBatchList = document.createElement("div");
+                    subBatchList.className = "refresh-sub-batch-list";
+                    batch.subBatches.forEach((subBatch, subBatchIndex) => {
+                        const subBatchSection = document.createElement("section");
+                        subBatchSection.className = "refresh-sub-batch-status";
+
+                        const subBatchHeading = document.createElement("div");
+                        subBatchHeading.className = "refresh-sub-batch-heading";
+                        const subBatchTitle = document.createElement("strong");
+                        subBatchTitle.textContent = subBatch.name || `Sub-batch ${subBatchIndex + 1}`;
+                        const subBatchStates = document.createElement("div");
+                        subBatchStates.className = "refresh-attempt-states";
+                        subBatchStates.append(
+                            createRefreshState(subBatch.groupedStatus, "Grouped"),
+                            createRefreshState(subBatch.status, "Current"),
+                        );
+                        subBatchHeading.append(subBatchTitle, subBatchStates);
+
+                        const tables = document.createElement("ul");
+                        tables.className = "refresh-table-status-list";
+                        (subBatch.tables || []).forEach((table) => {
+                            const item = document.createElement("li");
+                            const name = document.createElement("span");
+                            name.textContent = table.name;
+                            const attemptStates = document.createElement("div");
+                            attemptStates.className = "refresh-attempt-states";
+                            attemptStates.append(createRefreshState(table.groupedStatus, "Batch attempt"));
+                            if (!["Not started", "Not required"].includes(table.retryStatus)) {
+                                attemptStates.append(createRefreshState(table.retryStatus, "Individual retry"));
+                            }
+                            item.append(name, attemptStates);
+                            tables.append(item);
+                        });
+
+                        subBatchSection.append(subBatchHeading, tables);
+                        subBatchList.append(subBatchSection);
+                    });
+                    section.append(subBatchList);
+                } else {
+                    const tables = document.createElement("ul");
+                    tables.className = "refresh-table-status-list";
+                    (batch.tables || []).forEach((table) => {
+                        const item = document.createElement("li");
+                        const name = document.createElement("span");
+                        name.textContent = table.name;
+                        item.append(name, createRefreshState(table.status));
+                        tables.append(item);
+                    });
+                    section.append(tables);
+                }
                 refreshBatchList.append(section);
             });
 
@@ -2108,12 +2276,12 @@
             }
         }
 
-        async function startModelRefresh(presetId) {
+        async function startModelRefresh(presetId, aiBatchFile = "") {
             startModelRefreshButton.disabled = true;
             const response = await fetch("/api/refresh-jobs", {
                 method: "POST",
                 headers: {"Content-Type": "application/json", "Accept": "application/json"},
-                body: JSON.stringify({presetId}),
+                body: JSON.stringify(aiBatchFile ? {aiBatchFile} : {presetId}),
             });
             const job = await response.json().catch(() => ({}));
             if (!response.ok) {
@@ -2140,7 +2308,7 @@
         syncTableListEmptyStates();
         initialPresetState = getComparablePresetState();
 
-        aiRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(aiRefreshButton, distributeTablesAcrossBatches));
+        aiRefreshButton.addEventListener("click", () => runWithRestButtonsLocked(aiRefreshButton, prepareAiPoweredRefresh));
         refreshModelTablesButton.addEventListener("click", () => runWithRestButtonsLocked(refreshModelTablesButton, refreshModelTables));
         fetchAdvanceDataButton.addEventListener("click", () => runWithRestButtonsLocked(fetchAdvanceDataButton, fetchAdvanceData));
         startModelRefreshButton.addEventListener("click", async () => {

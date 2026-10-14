@@ -17,6 +17,7 @@ else:
 # ===== Configuration =====
 PRESETS_DIR = Path(__file__).resolve().parent.parent / "presets"
 POLL_INTERVAL_SECONDS = 30
+REFRESH_START_RETRY_SECONDS = 5
 DEFAULT_REFRESH_TIMEOUT_SECONDS = 4 * 60 * 60
 FAILURE_DIR = Path(__file__).resolve().parent / "failure"
 
@@ -26,6 +27,23 @@ FABRIC_API_ROOT = "https://api.fabric.microsoft.com/v1"
 
 class RefreshCancelled(Exception):
     """Raised when a user cancels an active batch refresh job."""
+
+
+class RefreshFailed(RuntimeError):
+    """Raised with the object-level details from a failed Power BI refresh."""
+
+    def __init__(self, refresh):
+        self.refresh = refresh
+        super().__init__(json.dumps(refresh, indent=2))
+
+
+class PowerBIRequestError(RuntimeError):
+    """Raised when a Power BI REST request returns an error response."""
+
+    def __init__(self, method, url, status_code, response_text):
+        self.status_code = status_code
+        self.response_text = response_text
+        super().__init__(f"{method} {url} failed: {status_code}\n{response_text}")
 
 
 def resolve_preset_path(preset_arg=None):
@@ -124,7 +142,7 @@ def api_request(method, url, body=None):
     request_kwargs = {"params": body} if method == "GET" else {"json": body}
     r = requests.request(method, url, headers=headers, timeout=60, **request_kwargs)
     if r.status_code >= 400:
-        raise RuntimeError(f"{method} {url} failed: {r.status_code}\n{r.text}")
+        raise PowerBIRequestError(method, url, r.status_code, r.text)
 
     return {
         "status": r.status_code,
@@ -132,19 +150,134 @@ def api_request(method, url, body=None):
         "json": r.json() if r.content else None,
     }
 
-def start_table_refresh(workspace_id, model_id, tables, batch_settings):
+def split_into_sub_batches(tables, max_parallelism):
+    if max_parallelism < 1:
+        raise ValueError("max_parallelism must be greater than 0")
+    return [
+        tables[index:index + max_parallelism]
+        for index in range(0, len(tables), max_parallelism)
+    ]
+
+
+def build_job_batches(refresh_plan):
+    max_parallelism = positive_int_setting(
+        refresh_plan["batch_settings"],
+        "maxParallelism",
+        4,
+    )
+    job_batches = []
+    for batch in refresh_plan["batches"]:
+        sub_batches = split_into_sub_batches(batch["tables"], max_parallelism)
+        job_batches.append({
+            "name": str(batch["batch_number"]),
+            "status": "Pending",
+            "tables": [
+                {"name": table, "status": "Pending"}
+                for table in batch["tables"]
+            ],
+            "subBatches": [
+                {
+                    "name": f"Sub-batch {index}",
+                    "status": "Pending",
+                    "groupedStatus": "Pending",
+                    "tables": [
+                        {
+                            "name": table,
+                            "status": "Pending",
+                            "groupedStatus": "Pending",
+                            "retryStatus": "Not started",
+                        }
+                        for table in tables
+                    ],
+                }
+                for index, tables in enumerate(sub_batches, start=1)
+            ],
+        })
+    return job_batches
+
+
+def normalize_api_commit_mode(commit_mode):
+    normalized = str(commit_mode or "transactional").strip().lower()
+    if normalized == "transactional":
+        return "transactional"
+    if normalized in {"partial-batch", "partialbatch"}:
+        return "partialBatch"
+    raise ValueError(f"Unsupported commit mode: {commit_mode}")
+
+
+def get_unsuccessful_refresh_tables(refresh):
+    return sorted({
+        refresh_object.get("table")
+        for refresh_object in refresh.get("objects") or []
+        if refresh_object.get("table")
+        and str(refresh_object.get("status") or "").lower() != "completed"
+    })
+
+
+def refresh_has_terminal_error(refresh):
+    extended_status = refresh.get("extendedStatus")
+    if extended_status and str(extended_status).lower() != "completed":
+        return True
+    if refresh.get("serviceExceptionJson"):
+        return True
+    return any(
+        str(message.get("type") or "").lower() == "error"
+        for message in refresh.get("messages") or []
+        if isinstance(message, dict)
+    )
+
+
+def is_refresh_in_progress_error(error):
+    if error.status_code != 400:
+        return False
+    try:
+        response = json.loads(error.response_text)
+    except json.JSONDecodeError:
+        return False
+    return response.get("error", {}).get("code") == "RefreshInProgressException"
+
+
+def start_table_refresh(
+    workspace_id,
+    model_id,
+    tables,
+    batch_settings,
+    commit_mode=None,
+    cancel_event=None,
+    conflict_timeout_seconds=300,
+):
     url = f"{POWER_BI_API_ROOT}/groups/{workspace_id}/datasets/{model_id}/refreshes"
     timeout_minutes = positive_int_setting(batch_settings, "timeoutMinutes", DEFAULT_REFRESH_TIMEOUT_SECONDS // 60)
+    api_commit_mode = normalize_api_commit_mode(
+        commit_mode or batch_settings.get("commitMode", "transactional")
+    )
     body = {
         "type": "Full",
-        "commitMode": batch_settings.get("commitMode", "transactional"),
+        "commitMode": api_commit_mode,
         "retryCount": positive_int_setting(batch_settings, "retryCount", 2),
         "maxParallelism": positive_int_setting(batch_settings, "maxParallelism", min(len(tables), 4)),
         "timeout": timeout_text(timeout_minutes),
         "objects": [{"table": table} for table in tables]
     }
-    ##response= GET https://api.powerbi.com/v1.0/myorg/groups/{groupId}/datasets
-    response = api_request("POST", url, body)
+    conflict_started_at = time.monotonic()
+    while True:
+        if cancel_event and cancel_event.is_set():
+            raise RefreshCancelled("Refresh cancelled by user")
+        try:
+            response = api_request("POST", url, body)
+            break
+        except PowerBIRequestError as exc:
+            if not is_refresh_in_progress_error(exc):
+                raise
+            if time.monotonic() - conflict_started_at > conflict_timeout_seconds:
+                raise TimeoutError(
+                    "Power BI did not release the active refresh slot before the retry timeout."
+                ) from exc
+            if cancel_event:
+                cancel_event.wait(REFRESH_START_RETRY_SECONDS)
+            else:
+                time.sleep(REFRESH_START_RETRY_SECONDS)
+
     location = response["headers"].get("Location")
 
     if location:
@@ -181,17 +314,21 @@ def wait_for_refresh(workspace_id, model_id, refresh_id, timeout_seconds, cancel
             raise RefreshCancelled("Refresh cancelled by user")
 
         refresh = get_refresh_status(workspace_id, model_id, refresh_id)
-        status = refresh.get("status", "Unknown")
+        status = str(refresh.get("status") or "Unknown")
+        normalized_status = status.lower()
 
         if status != last_status:
             print(f"   Status: {status}")
             last_status = status
 
-        if status == "Completed":
-            return
+        if normalized_status == "completed":
+            unsuccessful_tables = get_unsuccessful_refresh_tables(refresh)
+            if unsuccessful_tables or refresh_has_terminal_error(refresh):
+                raise RefreshFailed(refresh)
+            return refresh
 
-        if status in {"Failed", "Cancelled", "Disabled"}:
-            raise RuntimeError(json.dumps(refresh, indent=2))
+        if normalized_status in {"failed", "cancelled", "disabled"}:
+            raise RefreshFailed(refresh)
 #monotonic is like a cuurent timestamp which is used to find the net time taken table to get refresh if it more than the thresold time then it will throw timeout error
         if time.monotonic() - started_at > timeout_seconds:
             raise TimeoutError(f"Refresh timed out after {timeout_seconds} seconds")
@@ -218,14 +355,7 @@ class BatchRefreshManager:
             "message": "Waiting to start refresh.",
             "currentRefreshId": None,
             "cancelEvent": threading.Event(),
-            "batches": [
-                {
-                    "name": str(batch["batch_number"]),
-                    "status": "Pending",
-                    "tables": [{"name": table, "status": "Pending"} for table in batch["tables"]],
-                }
-                for batch in refresh_plan["batches"]
-            ],
+            "batches": build_job_batches(refresh_plan),
         }
         with self._lock:
             self._jobs[job_id] = job
@@ -274,14 +404,84 @@ class BatchRefreshManager:
         batch["status"] = status
         for table in batch["tables"]:
             table["status"] = status
+        for sub_batch in batch.get("subBatches", []):
+            sub_batch["status"] = status
+            for table in sub_batch["tables"]:
+                table["status"] = status
+
+    def _set_table_status(self, job, batch_index, table_index, status, error=None):
+        table = job["batches"][batch_index]["tables"][table_index]
+        table["status"] = status
+        if error:
+            table["error"] = str(error)
+        else:
+            table.pop("error", None)
+
+    def _set_table_attempt_status(
+        self,
+        job,
+        batch_index,
+        sub_batch_index,
+        table_index,
+        sub_table_index,
+        status,
+        grouped_status=None,
+        retry_status=None,
+        error=None,
+    ):
+        self._set_table_status(job, batch_index, table_index, status, error)
+        table = job["batches"][batch_index]["subBatches"][sub_batch_index]["tables"][sub_table_index]
+        table["status"] = status
+        if grouped_status is not None:
+            table["groupedStatus"] = grouped_status
+        if retry_status is not None:
+            table["retryStatus"] = retry_status
+        if error:
+            table["error"] = str(error)
+        else:
+            table.pop("error", None)
+
+    def _execute_refresh(self, job, refresh_plan, tables, timeout_seconds, commit_mode):
+        refresh_id = start_table_refresh(
+            refresh_plan["workspace_id"],
+            refresh_plan["model_id"],
+            tables,
+            refresh_plan["batch_settings"],
+            commit_mode=commit_mode,
+            cancel_event=job["cancelEvent"],
+            conflict_timeout_seconds=timeout_seconds,
+        )
+        with self._lock:
+            job["currentRefreshId"] = refresh_id
+
+        try:
+            wait_for_refresh(
+                refresh_plan["workspace_id"],
+                refresh_plan["model_id"],
+                refresh_id,
+                timeout_seconds,
+                job["cancelEvent"],
+            )
+        finally:
+            with self._lock:
+                if job["currentRefreshId"] == refresh_id:
+                    job["currentRefreshId"] = None
 
     def _cancel_unfinished(self, job):
         for batch in job["batches"]:
-            if batch["status"] in {"Pending", "Running"}:
+            if batch["status"] in {"Pending", "Processing", "Running"}:
                 batch["status"] = "Cancelled"
                 for table in batch["tables"]:
-                    if table["status"] in {"Pending", "Running"}:
+                    if table["status"] in {"Pending", "Running", "Retrying"}:
                         table["status"] = "Cancelled"
+                for sub_batch in batch.get("subBatches", []):
+                    if sub_batch["status"] in {"Pending", "Running", "Retrying"}:
+                        sub_batch["status"] = "Cancelled"
+                    for table in sub_batch["tables"]:
+                        if table["status"] in {"Pending", "Running", "Retrying"}:
+                            table["status"] = "Cancelled"
+                            if table["retryStatus"] in {"Not started", "Pending", "Retrying"}:
+                                table["retryStatus"] = "Cancelled"
 
     def _run(self, job_id, refresh_plan):
         with self._lock:
@@ -296,38 +496,188 @@ class BatchRefreshManager:
             "timeoutMinutes",
             DEFAULT_REFRESH_TIMEOUT_SECONDS // 60,
         ) * 60
+        max_parallelism = positive_int_setting(
+            refresh_plan["batch_settings"],
+            "maxParallelism",
+            4,
+        )
+        commit_mode = refresh_plan["batch_settings"].get("commitMode", "transactional")
+        retried_sub_batch_count = 0
 
         try:
             for batch_index, batch in enumerate(refresh_plan["batches"]):
+                sub_batches = split_into_sub_batches(batch["tables"], max_parallelism)
+                table_offset = 0
                 with self._lock:
                     if job["cancelEvent"].is_set():
                         raise RefreshCancelled("Refresh cancelled by user")
-                    self._set_batch_status(job, batch_index, "Running")
-                    job["message"] = f"Running batch {batch_index + 1} of {len(refresh_plan['batches'])}."
+                    job["batches"][batch_index]["status"] = "Processing"
 
-                refresh_id = start_table_refresh(
-                    refresh_plan["workspace_id"],
-                    refresh_plan["model_id"],
-                    batch["tables"],
-                    refresh_plan["batch_settings"],
-                )
-                with self._lock:
-                    job["currentRefreshId"] = refresh_id
+                for sub_batch_index, sub_batch in enumerate(sub_batches):
+                    table_indexes = range(table_offset, table_offset + len(sub_batch))
+                    indexed_tables = list(zip(table_indexes, sub_batch))
+                    table_offset += len(sub_batch)
+                    with self._lock:
+                        if job["cancelEvent"].is_set():
+                            raise RefreshCancelled("Refresh cancelled by user")
+                        job_sub_batch = job["batches"][batch_index]["subBatches"][sub_batch_index]
+                        job_sub_batch["status"] = "Running"
+                        job_sub_batch["groupedStatus"] = "Running"
+                        for sub_table_index, (table_index, _table_name) in enumerate(indexed_tables):
+                            self._set_table_attempt_status(
+                                job,
+                                batch_index,
+                                sub_batch_index,
+                                table_index,
+                                sub_table_index,
+                                "Running",
+                                grouped_status="Running",
+                            )
+                        job["message"] = (
+                            f"Running batch {batch_index + 1} of {len(refresh_plan['batches'])}, "
+                            f"sub-batch {sub_batch_index + 1} of {len(sub_batches)}."
+                        )
 
-                wait_for_refresh(
-                    refresh_plan["workspace_id"],
-                    refresh_plan["model_id"],
-                    refresh_id,
-                    timeout_seconds,
-                    job["cancelEvent"],
-                )
+                    try:
+                        self._execute_refresh(
+                            job,
+                            refresh_plan,
+                            sub_batch,
+                            timeout_seconds,
+                            commit_mode,
+                        )
+                    except RefreshCancelled:
+                        raise
+                    except Exception as grouped_error:
+                        retry_tables = list(sub_batch)
+                        retried_sub_batch_count += 1
+                        with self._lock:
+                            job_sub_batch = job["batches"][batch_index]["subBatches"][sub_batch_index]
+                            job_sub_batch["status"] = "Retrying"
+                            job_sub_batch["groupedStatus"] = "Failed"
+                            job_sub_batch["groupedError"] = str(grouped_error)
+                            for sub_table_index, (table_index, _table_name) in enumerate(indexed_tables):
+                                self._set_table_attempt_status(
+                                    job,
+                                    batch_index,
+                                    sub_batch_index,
+                                    table_index,
+                                    sub_table_index,
+                                    "Retrying",
+                                    grouped_status="Failed",
+                                    retry_status="Pending",
+                                )
+                            job["message"] = (
+                                f"Sub-batch {sub_batch_index + 1} in batch {batch_index + 1} failed. "
+                                f"Retrying all {len(retry_tables)} table(s) individually using "
+                                f"{commit_mode} commit mode."
+                            )
+
+                        for sub_table_index, (table_index, table_name) in enumerate(indexed_tables):
+                            with self._lock:
+                                if job["cancelEvent"].is_set():
+                                    raise RefreshCancelled("Refresh cancelled by user")
+                                self._set_table_attempt_status(
+                                    job,
+                                    batch_index,
+                                    sub_batch_index,
+                                    table_index,
+                                    sub_table_index,
+                                    "Retrying",
+                                    retry_status="Retrying",
+                                )
+                                job["message"] = (
+                                    f"Retrying table {table_name} individually after sub-batch failure."
+                                )
+                            try:
+                                self._execute_refresh(
+                                    job,
+                                    refresh_plan,
+                                    [table_name],
+                                    timeout_seconds,
+                                    commit_mode,
+                                )
+                            except RefreshCancelled:
+                                raise
+                            except Exception as table_error:
+                                with self._lock:
+                                    self._set_table_attempt_status(
+                                        job,
+                                        batch_index,
+                                        sub_batch_index,
+                                        table_index,
+                                        sub_table_index,
+                                        "Failed",
+                                        retry_status="Failed",
+                                        error=table_error,
+                                    )
+                            else:
+                                with self._lock:
+                                    self._set_table_attempt_status(
+                                        job,
+                                        batch_index,
+                                        sub_batch_index,
+                                        table_index,
+                                        sub_table_index,
+                                        "Completed",
+                                        retry_status="Completed",
+                                    )
+                        with self._lock:
+                            retry_tables_state = job["batches"][batch_index]["subBatches"][
+                                sub_batch_index
+                            ]["tables"]
+                            job["batches"][batch_index]["subBatches"][sub_batch_index]["status"] = (
+                                "Failed"
+                                if any(table["retryStatus"] == "Failed" for table in retry_tables_state)
+                                else "Completed"
+                            )
+                    else:
+                        with self._lock:
+                            job_sub_batch = job["batches"][batch_index]["subBatches"][sub_batch_index]
+                            job_sub_batch["status"] = "Completed"
+                            job_sub_batch["groupedStatus"] = "Completed"
+                            for sub_table_index, (table_index, _table_name) in enumerate(indexed_tables):
+                                self._set_table_attempt_status(
+                                    job,
+                                    batch_index,
+                                    sub_batch_index,
+                                    table_index,
+                                    sub_table_index,
+                                    "Completed",
+                                    grouped_status="Completed",
+                                    retry_status="Not required",
+                                )
+
                 with self._lock:
-                    job["currentRefreshId"] = None
-                    self._set_batch_status(job, batch_index, "Completed")
+                    batch_tables = job["batches"][batch_index]["tables"]
+                    job["batches"][batch_index]["status"] = (
+                        "Failed"
+                        if any(table["status"] == "Failed" for table in batch_tables)
+                        else "Completed"
+                    )
 
             with self._lock:
-                job["status"] = "Completed"
-                job["message"] = "All batches completed successfully."
+                failed_tables = [
+                    table["name"]
+                    for batch in job["batches"]
+                    for table in batch["tables"]
+                    if table["status"] == "Failed"
+                ]
+                if failed_tables:
+                    job["status"] = "Failed"
+                    job["message"] = (
+                        f"{len(failed_tables)} table(s) failed: "
+                        f"{', '.join(failed_tables)}."
+                    )
+                else:
+                    job["status"] = "Completed"
+                    if retried_sub_batch_count:
+                        job["message"] = (
+                            "All batches completed successfully after retrying "
+                            f"{retried_sub_batch_count} failed sub-batch(es) individually."
+                        )
+                    else:
+                        job["message"] = "All batches completed successfully."
         except RefreshCancelled:
             with self._lock:
                 job["currentRefreshId"] = None
@@ -338,7 +688,11 @@ class BatchRefreshManager:
             with self._lock:
                 job["currentRefreshId"] = None
                 running_index = next(
-                    (index for index, batch in enumerate(job["batches"]) if batch["status"] == "Running"),
+                    (
+                        index
+                        for index, batch in enumerate(job["batches"])
+                        if batch["status"] in {"Processing", "Running"}
+                    ),
                     None,
                 )
                 if running_index is not None:

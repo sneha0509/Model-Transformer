@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import requests
 from azure.core.exceptions import ClientAuthenticationError
@@ -7,7 +8,15 @@ from azure.identity import CredentialUnavailableError
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
+from core.ai_batch_creation import (
+    DEFAULT_INPUT_DIRECTORY as AI_BATCH_INPUT_DIRECTORY,
+    DEFAULT_OUTPUT_DIRECTORY as AI_BATCH_OUTPUT_DIRECTORY,
+    generate_ai_batches,
+)
+from core.ai_powered_refresh import get_ai_refresh_metadata
+from core.ai_table_precedence import generate_table_precedence
 from core.batch_processing import batch_refresh_manager
+from core.copilot_auth import ensure_copilot_authenticated
 from core.normalization import normalize_selected_tables_payload
 from core.orchestrator import get_advanced_table_details, get_asset_details, get_login_context, get_workspace_assets
 from core.presets import (
@@ -116,15 +125,30 @@ def delete_preset(preset_id):
 def start_refresh_job():
     payload = get_request_payload()
     preset_id = payload.get("presetId") if isinstance(payload, dict) else None
+    ai_batch_file = (
+        str(payload.get("aiBatchFile") or "").strip()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if ai_batch_file and (
+        Path(ai_batch_file).name != ai_batch_file
+        or Path(ai_batch_file).suffix.lower() != ".json"
+    ):
+        return jsonify({"message": "Invalid AI batch creation file."}), 400
+
     try:
-        preset_path = get_preset_path(preset_id)
-        job = batch_refresh_manager.start(preset_path)
+        refresh_plan_path = (
+            AI_BATCH_OUTPUT_DIRECTORY / ai_batch_file
+            if ai_batch_file
+            else get_preset_path(preset_id)
+        )
+        job = batch_refresh_manager.start(refresh_plan_path)
     except (ValueError, json.JSONDecodeError) as exc:
         return jsonify({"message": str(exc)}), 400
     except FileNotFoundError as exc:
         return jsonify({"message": str(exc)}), 404
     except OSError as exc:
-        return jsonify({"message": f"Could not read the saved preset: {exc}"}), 500
+        return jsonify({"message": f"Could not read the refresh configuration: {exc}"}), 500
     return jsonify(job), 202
 
 
@@ -218,6 +242,107 @@ def advanced_table_data(workspace_id, model_id):
         return jsonify({"message": str(exc)}), 401
 
     return jsonify(details)
+
+
+@model_transformer.post("/api/workspaces/<workspace_id>/models/<model_id>/ai-refresh-metadata")
+def ai_refresh_metadata(workspace_id, model_id):
+    payload = get_request_payload()
+    workspace_name = payload.get("workspaceName") if isinstance(payload, dict) else ""
+    model_name = payload.get("modelName") if isinstance(payload, dict) else ""
+    selected_tables = payload.get("selectedTables") if isinstance(payload, dict) else []
+    all_tables = payload.get("allTables") if isinstance(payload, dict) else []
+
+    try:
+        metadata = get_ai_refresh_metadata(
+            workspace_name,
+            workspace_id,
+            model_name,
+            model_id,
+            selected_tables,
+            all_tables,
+        )
+    except (ClientAuthenticationError, CredentialUnavailableError) as exc:
+        return jsonify({"message": f"Browser authentication failed. Try signing in again. {exc}"}), 401
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        message = "Could not prepare AI refresh metadata. Confirm this account can query the semantic model."
+        return jsonify({"message": message}), status_code
+    except requests.RequestException as exc:
+        return jsonify({"message": f"Could not reach the Power BI or Fabric API. {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"message": str(exc)}), 401
+    except OSError as exc:
+        return jsonify({"message": f"Could not save AI refresh metadata: {exc}"}), 500
+
+    return jsonify(metadata)
+
+
+@model_transformer.post("/api/copilot-login")
+def copilot_login():
+    try:
+        status = ensure_copilot_authenticated()
+    except RuntimeError as exc:
+        return jsonify({"message": str(exc)}), 502
+
+    return jsonify({
+        "authenticated": True,
+        "login": status.login,
+    })
+
+
+@model_transformer.post("/api/ai-table-precedence")
+def ai_table_precedence():
+    try:
+        precedence, output_path = generate_table_precedence()
+    except FileNotFoundError as exc:
+        return jsonify({"message": str(exc)}), 404
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({"message": f"Could not validate AI table precedence: {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"message": f"Could not set table precedence with GitHub Copilot: {exc}"}), 502
+    except OSError as exc:
+        return jsonify({"message": f"Could not save AI table precedence: {exc}"}), 500
+
+    return jsonify({
+        **precedence,
+        "outputFile": output_path.name,
+    })
+
+
+@model_transformer.post("/api/ai-batch-creation")
+def ai_batch_creation():
+    payload = get_request_payload()
+    precedence_file = (
+        str(payload.get("precedenceFile") or "").strip()
+        if isinstance(payload, dict)
+        else ""
+    )
+    if precedence_file and (
+        Path(precedence_file).name != precedence_file
+        or Path(precedence_file).suffix.lower() != ".json"
+    ):
+        return jsonify({"message": "Invalid AI table precedence file."}), 400
+
+    precedence_path = (
+        AI_BATCH_INPUT_DIRECTORY / precedence_file
+        if precedence_file
+        else None
+    )
+    try:
+        batches, output_path = generate_ai_batches(precedence_path)
+    except FileNotFoundError as exc:
+        return jsonify({"message": str(exc)}), 404
+    except (json.JSONDecodeError, ValueError) as exc:
+        return jsonify({"message": f"Could not validate AI batch creation: {exc}"}), 502
+    except RuntimeError as exc:
+        return jsonify({"message": f"Could not create AI refresh batches with GitHub Copilot: {exc}"}), 502
+    except OSError as exc:
+        return jsonify({"message": f"Could not save AI refresh batches: {exc}"}), 500
+
+    return jsonify({
+        **batches,
+        "outputFile": output_path.name,
+    })
 
 
 def main():
