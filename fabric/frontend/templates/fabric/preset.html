@@ -1,0 +1,267 @@
+{% extends "shared/base.html" %}
+
+{% block title %}{{ preset.presetName }} - Fabric Preset{% endblock %}
+{% block app_title %}{{ preset.presetName }}{% endblock %}
+{% block app_aria_label %}Fabric semantic model preset{% endblock %}
+
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('fabric.static', filename='css/styles.css') }}">
+{% endblock %}
+
+{% block dashboard_navigation %}
+    <a class="portal-nav-link" href="{{ url_for('fabric.home') }}">Fabric Home</a>
+    <a class="portal-nav-link" href="{{ url_for('portal.home') }}">Dashboards</a>
+{% endblock %}
+
+{% block app_content %}
+    <div class="fabric-dashboard fabric-preset-page">
+        <section class="fabric-step" aria-labelledby="presetHeading">
+            <div class="step-heading">
+                <div>
+                    <p class="step-kicker">Semantic model preset</p>
+                    <h2 id="presetHeading">{{ preset.semanticModel.name }}</h2>
+                    <a class="fabric-action-button impact-launch-button"
+                       href="{{ url_for('fabric.impact_page', preset_id=preset.presetId) }}">
+                        Impact Analysis
+                    </a>
+                </div>
+                <button
+                    id="refreshLineageButton"
+                    class="fabric-action-button"
+                    type="button"
+                    {% if not mapping %}hidden{% endif %}
+                >Refresh repository &amp; lineage</button>
+            </div>
+            <dl class="selection-details">
+                <div>
+                    <dt>Workspace</dt>
+                    <dd>{{ preset.workspace.displayName }}</dd>
+                </div>
+                <div>
+                    <dt>Repository</dt>
+                    <dd>{{ preset.repository.name }}</dd>
+                </div>
+                <div>
+                    <dt>Branch</dt>
+                    <dd>{{ preset.repository.branchName }}</dd>
+                </div>
+                <div>
+                    <dt>Semantic model path</dt>
+                    <dd>{{ preset.semanticModel.path }}</dd>
+                </div>
+                <div>
+                    <dt>Local repository</dt>
+                    <dd>{{ local_repository_path }}</dd>
+                </div>
+            </dl>
+            <section
+                id="lineageProcessingScreen"
+                class="lineage-processing-screen"
+                data-process-url="{{ url_for('fabric_api.process_fabric_preset', preset_id=preset.presetId) }}"
+                data-auto-process="{{ 'false' if mapping else 'true' }}"
+                aria-labelledby="lineageProcessingTitle"
+                {% if mapping %}hidden{% endif %}
+            >
+                <div class="lineage-processing-card">
+                    <div class="lineage-spinner" aria-hidden="true"></div>
+                    <p class="step-kicker">Fabric preset processing</p>
+                    <h3 id="lineageProcessingTitle">Preparing repository and lineage data</h3>
+                    <p id="lineageProcessingStatus" class="fabric-status" aria-live="polite">
+                        Starting repository processing.
+                    </p>
+                    <div
+                        id="lineageProcessingProgress"
+                        class="lineage-progress"
+                        role="progressbar"
+                        aria-label="Repository and lineage processing progress"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow="0"
+                    ><span></span></div>
+                    <ol class="lineage-progress-steps">
+                        <li id="lineageStageRepository" data-state="pending">
+                            <strong>Repository snapshot</strong>
+                            <span>Download or prepare the selected branch.</span>
+                        </li>
+                        <li id="lineageStageLineage" data-state="pending">
+                            <strong>Lineage analysis</strong>
+                            <span>Trace the semantic model to tables, notebooks, and pipelines.</span>
+                        </li>
+                        <li id="lineageStageReports" data-state="pending">
+                            <strong>Mapping reports</strong>
+                            <span>Save the mapping used by this preset.</span>
+                        </li>
+                    </ol>
+                    <button id="retryLineageButton" class="fabric-action-button" type="button" hidden>
+                        Try again
+                    </button>
+                </div>
+            </section>
+            {% if mapping %}
+            <div id="semanticModelPresetLayout" aria-label="Fabric pipeline, notebook and table mapping">
+                <section class="lineage-graph-section" aria-labelledby="lineageGraphHeading">
+                    <h3 id="lineageGraphHeading">Semantic model lineage</h3>
+                    <p id="lineageGraphHelp" class="fabric-status">
+                        Follow each branch from the centered semantic model &rarr; table &rarr; notebook &rarr; pipeline.
+                        Connected items are grouped by flow, not by type; shared notebooks and pipelines appear only once.
+                        Nodes are packed closely along each flow, with extra spacing only to avoid overlaps.
+                        Only notebook writes are shown by default; enable Include reads to add consumers.
+                        Below 55% zoom, nodes become small colored circles; zoom in to expand their details.
+                        Drag nodes to rearrange, drag the background to pan, and scroll to zoom.
+                        Select a node or relationship to highlight its incoming and outgoing paths and fade unrelated flows.
+                        Use Fit selected flow for a closer view, or choose a Model table to isolate a branch.
+                        Dashed lines mean unverified source scope.
+                    </p>
+                    <div class="lineage-graph-toolbar" role="group" aria-label="Lineage graph controls">
+                        <label for="lineageGraphTable">Model table</label>
+                        <select id="lineageGraphTable"><option value="">All model tables</option></select>
+                        <label class="lineage-read-toggle" for="lineageGraphReads">
+                            <input id="lineageGraphReads" type="checkbox"> Include reads
+                        </label>
+                        <button type="button" id="lineageZoomIn" aria-label="Zoom in">+</button>
+                        <button type="button" id="lineageZoomOut" aria-label="Zoom out">-</button>
+                        <button type="button" id="lineageFit">Fit graph</button>
+                        <button type="button" id="lineageFitFlow" disabled>Fit selected flow</button>
+                        <button type="button" id="lineageClearFlow" disabled>Clear path</button>
+                        <button type="button" id="lineageReset">Reset layout</button>
+                        <output id="lineageZoomLevel" aria-live="polite">100%</output>
+                        <label for="lineageGraphSearch">Find node</label>
+                        <input id="lineageGraphSearch" type="search" placeholder="Model, table, notebook or pipeline">
+                    </div>
+                    <svg id="lineageGraph" class="lineage-graph" tabindex="0"
+                         role="group" aria-label="Interactive semantic model lineage graph"
+                         aria-describedby="lineageGraphHelp lineageGraphKeyboardHelp"></svg>
+                    <p id="lineageGraphKeyboardHelp" class="lineage-evidence">
+                        Keyboard: Tab to a node or relationship, Enter to inspect, arrow keys to move a node
+                        or pan the canvas, +/- to zoom, 0 to fit, and Escape to clear the highlighted path.
+                    </p>
+                    <p id="lineageGraphStatus" class="fabric-status" aria-live="polite"></p>
+                    <aside id="lineageGraphDetails" class="lineage-graph-details" aria-label="Selected lineage evidence" aria-live="polite">
+                        Select a node or relationship to highlight its flow and inspect its evidence.
+                    </aside>
+                    <script id="lineageGraphData" type="application/json">{{ mapping.graph | tojson }}</script>
+                </section>
+                <details class="lineage-record">
+                    <summary>Semantic model source tables ({{ mapping.modelTables | length }})</summary>
+                    {% for table in mapping.modelTables %}
+                        <div data-lineage-record>
+                            <h4>{{ table.name }} &middot; {{ table.status }}</h4>
+                            {% for source in table.sources %}
+                                <p><code>{{ source.table }}</code> &middot; Scope: {{ source.scope | tojson }}</p>
+                                {% for evidence in source.evidence %}
+                                    <p class="lineage-evidence">{{ evidence.file }}{% if evidence.line %}:{{ evidence.line }}{% endif %} &middot; Partition: {{ evidence.partition }}</p>
+                                {% endfor %}
+                            {% else %}
+                                <p class="fabric-status">No physical source{% if table.status == 'calculated' %} (calculated table){% else %}; see analysis gaps{% endif %}.</p>
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </details>
+                <h3>Fabric artifact mapping</h3>
+                <p class="fabric-status">
+                    All downloaded Fabric pipelines and notebooks in the current repository snapshot.
+                    Legacy artifacts are excluded. Use refresh to download the latest branch and rebuild this mapping.
+                </p>
+                <dl class="lineage-summary">
+                    {% for label, key in [('Pipelines', 'pipelines'), ('Notebooks', 'notebooks'), ('Notebook calls', 'pipelineNotebookCalls'), ('Read tables', 'readTables'), ('Written tables', 'writtenTables'), ('Gaps', 'gaps')] %}
+                        <div><dt>{{ label }}</dt><dd>{{ mapping.summary[key] }}</dd></div>
+                    {% endfor %}
+                </dl>
+                <div class="lineage-downloads">
+                    <a class="portal-nav-link" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='json') }}">Download full JSON mapping</a>
+                    <a class="portal-nav-link" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='csv') }}">Download evidence CSV</a>
+                </div>
+                <label class="search-field" for="lineageSearch">
+                    Filter by pipeline, notebook, table or source path
+                    <input id="lineageSearch" type="search" placeholder="Search the mapping">
+                </label>
+                <p id="lineageFilterStatus" class="fabric-status" aria-live="polite"></p>
+                <h3>Pipeline &rarr; notebook &rarr; tables</h3>
+                {% for pipeline in mapping.pipelines %}
+                    <details class="lineage-record" data-lineage-record>
+                        <summary>{{ pipeline.name }}</summary>
+                        <p class="lineage-evidence">{{ pipeline.file }} · ID: {{ pipeline.id or 'Unavailable' }}</p>
+                        {% for link in mapping.pipelineLinks if link.pipelineKey == pipeline.key %}
+                            <h4>{{ link.activity }} &rarr; {{ link.targetName or link.reference or 'Unknown target' }}</h4>
+                            <p class="fabric-status">{{ link.kind }} · {{ link.status }} · Workspace: {{ link.workspaceId or 'Unspecified' }}</p>
+                            <p class="lineage-evidence">Activity: {{ link.activityPath }} · Parameters: {{ link.parameters | tojson }}</p>
+                            {% if link.dependsOn %}<p>Depends on: {{ link.dependsOn | tojson }}</p>{% endif %}
+                            {% for title, dependencies in [('Reads', link.reads), ('Writes', link.writes)] %}
+                                <h4>{{ title }} ({{ dependencies | length }})</h4>
+                                <ul class="lineage-tables">
+                                    {% for table in dependencies %}
+                                        <li>
+                                            <code>{{ table.table }}</code> <span>{{ table.status }}</span>
+                                            {% if table.defaultLakehouse %}
+                                                <small>Default lakehouse: {{ table.defaultLakehouse.default_lakehouse_name or table.defaultLakehouse.default_lakehouse }} · Workspace: {{ table.defaultLakehouse.default_lakehouse_workspace_id }}</small>
+                                            {% endif %}
+                                            {% for evidence in table.evidence %}
+                                                <small>{{ evidence.file }}:{{ evidence.line }} · {{ evidence.method }}</small>
+                                            {% endfor %}
+                                        </li>
+                                    {% else %}<li>No statically identified table dependencies.</li>{% endfor %}
+                                </ul>
+                            {% endfor %}
+                        {% else %}<p class="fabric-status">No notebook or child-pipeline calls identified. Check gaps below.</p>{% endfor %}
+                    </details>
+                {% else %}<p class="fabric-status">No Fabric pipeline folders found.</p>{% endfor %}
+                <h3>Notebook inventory (notebook defaults)</h3>
+                <p class="fabric-status">Defaults can differ from pipeline overrides above. This inventory includes notebooks without a pipeline caller.</p>
+                {% for notebook in mapping.notebooks %}
+                    <details class="lineage-record" data-lineage-record>
+                        <summary>{{ notebook.name }} · {{ notebook.reads | length }} reads · {{ notebook.writes | length }} writes</summary>
+                        <p class="lineage-evidence">{{ notebook.file }} · ID: {{ notebook.id or 'Unavailable' }}</p>
+                        {% for title, dependencies in [('Reads', notebook.reads), ('Writes', notebook.writes)] %}
+                            <h4>{{ title }}</h4>
+                            <ul class="lineage-tables">
+                                {% for table in dependencies %}
+                                    <li><code>{{ table.table }}</code>
+                                        {% for evidence in table.evidence %}<small>{{ evidence.file }}:{{ evidence.line }}</small>{% endfor %}
+                                    </li>
+                                {% else %}<li>No statically identified table dependencies.</li>{% endfor %}
+                            </ul>
+                        {% endfor %}
+                        {% for call in mapping.notebookLinks if call.notebookKey == notebook.key %}
+                            <p>Calls notebook: {{ call.reference }} · {{ call.status }} · Line {{ call.evidence.line }}</p>
+                        {% endfor %}
+                    </details>
+                {% else %}<p class="fabric-status">No Fabric notebook folders found.</p>{% endfor %}
+                <h3>Table &rarr; producers / consumers</h3>
+                {% for table in mapping.tables %}
+                    <details class="lineage-record" data-lineage-record>
+                        <summary>{{ table.name }} · {{ table.writers | length }} writer contexts · {{ table.readers | length }} reader contexts</summary>
+                        <p class="lineage-evidence">Identity: {{ table.key }}</p>
+                        {% for label, owners in [('Writers', table.writers), ('Readers', table.readers)] %}
+                            <h4>{{ label }}</h4>
+                            <ul class="lineage-tables">
+                                {% for owner in owners %}
+                                    <li>{{ owner.notebookKey }}<small>{{ owner.pipelineKey or 'Notebook defaults' }}</small></li>
+                                {% else %}<li>None identified in this snapshot.</li>{% endfor %}
+                            </ul>
+                        {% endfor %}
+                    </details>
+                {% endfor %}
+                <details class="lineage-record">
+                    <summary>Analysis gaps ({{ mapping.issues | length }})</summary>
+                    <ul class="lineage-tables">
+                        {% for issue in mapping.issues %}
+                            <li>{{ issue.message }}<small>{{ issue.file }}{% if issue.line %}:{{ issue.line }}{% endif %}</small></li>
+                        {% else %}<li>No unresolved references or parser gaps detected.</li>{% endfor %}
+                    </ul>
+                </details>
+                <details class="lineage-record">
+                    <summary>Scope and limitations</summary>
+                    <ul>{% for limitation in mapping.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+                    <p class="fabric-status">Generated: {{ mapping.generatedAt }}</p>
+                </details>
+            </div>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script src="{{ url_for('fabric.static', filename='js/lineage-graph.js') }}"></script>
+    <script src="{{ url_for('fabric.static', filename='js/lineage.js') }}"></script>
+{% endblock %}

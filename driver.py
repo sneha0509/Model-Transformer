@@ -1,10 +1,8 @@
-from ui import app
-from dotenv import load_dotenv
+from shared.app import create_app
 import os
 
 def main():
-    load_dotenv(dotenv_path=".env", override=False)
-    app.model_transformer.run(debug=int(os.getenv("DEBUG")))
+    create_app().run(debug=os.getenv("DEBUG", "0") == "1")
 
 if __name__ == "__main__":
     main()

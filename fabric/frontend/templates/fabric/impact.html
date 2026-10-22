@@ -1,0 +1,95 @@
+{% extends "shared/base.html" %}
+
+{% block title %}{{ preset.presetName }} - Impact Analysis{% endblock %}
+{% block app_title %}Impact Analysis{% endblock %}
+{% block app_aria_label %}Fabric schema change impact analysis{% endblock %}
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('fabric.static', filename='css/styles.css') }}">
+{% endblock %}
+{% block dashboard_navigation %}
+    <a class="portal-nav-link" href="{{ url_for('fabric.preset_page', preset_id=preset.presetId) }}">Preset lineage</a>
+    <a class="portal-nav-link" href="{{ url_for('fabric.home') }}">Fabric Home</a>
+    <a class="portal-nav-link" href="{{ url_for('portal.home') }}">Dashboards</a>
+{% endblock %}
+{% block app_content %}
+<div class="fabric-dashboard" id="fabricImpact"
+     data-catalog-url="{{ url_for('fabric_api.fabric_impact_catalog', preset_id=preset.presetId) }}"
+     data-analyze-url="{{ url_for('fabric_api.analyze_fabric_impact', preset_id=preset.presetId) }}"
+     data-report-base="{{ url_for('fabric_api.download_fabric_impact', preset_id=preset.presetId, report_id='REPORT_ID') }}">
+    <section class="fabric-step" aria-labelledby="impactHeading">
+        <p class="step-kicker">Impact analysis</p>
+        <h2 id="impactHeading">{{ preset.semanticModel.name }}</h2>
+        <p>Select columns and describe your change. Code builds the impacted lineage;
+            AI explains only the identified targets. Nothing is modified.</p>
+        <details class="impact-source-details">
+            <summary>Data sources &amp; privacy</summary>
+            <p class="fabric-status">Schema: {{ preset.workspace.displayName }} (Fabric API).
+                Code: {{ preset.repository.name }} / {{ preset.repository.branchName }} (local snapshot).
+                Only targeted cells, model objects, pipeline activities and their required context
+                are sent to GitHub Copilot. Unchanged explanations are reused locally.</p>
+        </details>
+        <button class="fabric-action-button" type="button" id="reloadImpactSchema">Refresh tables &amp; columns</button>
+        <p id="impactStatus" class="fabric-status" role="status" aria-live="polite">Loading tables and columns from Fabric.</p>
+        <form id="impactLiveModelForm" class="impact-live-model-picker" hidden>
+            <p>Repository model names can differ from deployed model names. Choose the
+                corresponding live model in <strong>{{ preset.workspace.displayName }}</strong>.
+                Its ID will be saved for this preset without changing the repository selection.</p>
+            <label for="impactLiveModel">Live Fabric semantic model</label>
+            <select id="impactLiveModel" required></select>
+            <button id="loadImpactLiveModel" class="fabric-action-button" type="submit">
+                Load tables &amp; columns
+            </button>
+        </form>
+        <details id="impactCatalogGaps" hidden>
+            <summary>Schema discovery gaps</summary>
+            <ul id="impactCatalogGapList"></ul>
+        </details>
+    </section>
+    <form id="impactForm" class="fabric-step" aria-labelledby="impactSelectionHeading">
+        <h2 id="impactSelectionHeading">1. Describe your change</h2>
+        <div class="impact-selection-layout">
+            <div class="impact-selection-pane">
+                <label for="impactSearch">Find a table or column</label>
+                <input id="impactSearch" type="search" placeholder="Table or column name">
+                <p id="impactSelectionCount" class="fabric-status" aria-live="polite">0 columns selected</p>
+                <div id="impactTables" class="impact-tables"></div>
+            </div>
+            <div class="impact-instruction-pane">
+                <label for="impactInstructions"><strong>What will change?</strong></label>
+                <p id="impactInstructionHelp" class="fabric-status">
+                    Include table and column names, the new name or type, and any intended behavior change.
+                </p>
+                <textarea id="impactInstructions" rows="8" maxlength="20000" required
+                          aria-describedby="impactInstructionHelp"
+                          placeholder="For example: In Orders, rename the physical Amount column to Revenue but keep its model display name. Change CustomerID to text to preserve leading zeros. Explain which notebook code, relationships and measures are affected and recommend the fixes."></textarea>
+                <button class="fabric-action-button" id="analyzeImpactButton" type="submit" disabled>
+                    Analyze impact
+                </button>
+                <p class="fabric-status">Local dependency analysis first. Targeted AI explanations
+                    run automatically using your desktop Copilot sign-in.</p>
+            </div>
+        </div>
+    </form>
+    <section id="impactResults" class="fabric-step" aria-labelledby="impactResultsHeading" hidden>
+        <h2 id="impactResultsHeading">2. Review the impact</h2>
+        <p id="impactReportSummary"></p>
+        <a id="impactReportDownload">Download saved JSON report</a>
+        <h3>Impacted lineage <small>Identified by code</small></h3>
+        <p class="fabric-status">Candidates are not guaranteed edits. Table-level links do not prove column flow.</p>
+        <div id="impactTargets"></div>
+        <details class="impact-dependency-details">
+            <summary>View dependency connections</summary>
+            <div id="impactLineage" class="impact-lineage"></div>
+        </details>
+        <h3>Impact &amp; required changes <small>Targeted AI reasoning</small></h3>
+        <div id="impactFindings"></div>
+        <details><summary>Coverage, gaps &amp; limitations</summary><ul id="impactReportGaps"></ul></details>
+        <details><summary>Analysis instructions &amp; summaries</summary><div id="impactSummaries"></div></details>
+        <details><summary>Artifact coverage</summary><ul id="impactInventory"></ul></details>
+    </section>
+</div>
+{% endblock %}
+{% block scripts %}
+    {{ super() }}
+    <script src="{{ url_for('fabric.static', filename='js/impact.js') }}"></script>
+{% endblock %}

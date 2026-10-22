@@ -1,0 +1,93 @@
+{% extends "shared/base.html" %}
+
+{% block title %}Fabric - Model Transformer{% endblock %}
+{% block app_title %}Fabric{% endblock %}
+{% block app_aria_label %}Fabric dashboard{% endblock %}
+
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('fabric.static', filename='css/styles.css') }}">
+{% endblock %}
+
+{% block dashboard_navigation %}
+    <a class="portal-nav-link" href="{{ url_for('portal.home') }}">Dashboards</a>
+{% endblock %}
+
+{% block app_content %}
+    <div class="fabric-dashboard" id="fabricDashboard" aria-label="Fabric workspace setup">
+        <section class="fabric-step" aria-labelledby="presetsHeading">
+            <div class="preset-home-heading">
+                <div>
+                    <p class="step-kicker">Semantic model configurations</p>
+                    <h2 id="presetsHeading">Saved Presets</h2>
+                </div>
+                <button class="fabric-action-button" id="addPresetButton" type="button">+ Add New Preset</button>
+            </div>
+            <p class="fabric-status" id="presetStatus" role="status">Loading presets...</p>
+            <div class="fabric-preset-grid" id="presetGrid"></div>
+        </section>
+
+        <section class="fabric-step" id="workspaceSection" aria-labelledby="workspaceHeading">
+            <div class="step-heading">
+                <span class="step-number" aria-hidden="true">1</span>
+                <div>
+                    <p class="step-kicker">Fabric workspace</p>
+                    <h2 id="workspaceHeading">Select a workspace</h2>
+                </div>
+            </div>
+            <label class="search-field" for="workspaceSearch">
+                <span>Search workspaces</span>
+                <input id="workspaceSearch" type="search" placeholder="Search by workspace name" autocomplete="off">
+            </label>
+            <p class="fabric-status" id="workspaceStatus" role="status">Loading workspaces...</p>
+            <div class="selection-list" id="workspaceList" aria-label="Available Fabric workspaces"></div>
+        </section>
+
+        <section class="fabric-step" id="repositorySection" aria-labelledby="repositoryHeading" hidden>
+            <div class="step-heading">
+                <span class="step-number" aria-hidden="true">2</span>
+                <div>
+                    <p class="step-kicker">Azure DevOps repository</p>
+                    <h2 id="repositoryHeading">Find the workspace repository</h2>
+                </div>
+            </div>
+            <p class="fabric-status" id="repositoryStatus" role="status"></p>
+            <label class="search-field" id="repositorySearchField" for="repositorySearch" hidden>
+                <span>Search repositories</span>
+                <input id="repositorySearch" type="search" placeholder="Search by repository, project, or organization" autocomplete="off">
+            </label>
+            <div class="selection-list" id="repositoryList" aria-label="Available Azure DevOps repositories"></div>
+        </section>
+
+        <section class="fabric-step selection-summary" id="selectionSection" aria-labelledby="selectionHeading" hidden>
+            <div class="step-heading">
+                <span class="step-number" aria-hidden="true">3</span>
+                <div>
+                    <p class="step-kicker">Repository semantic models</p>
+                    <h2 id="selectionHeading">Select one semantic model</h2>
+                </div>
+            </div>
+            <dl class="selection-details">
+                <div>
+                    <dt>Workspace</dt>
+                    <dd id="selectionWorkspaceName"></dd>
+                </div>
+                <div>
+                    <dt>Repository</dt>
+                    <dd id="selectionRepositoryName"></dd>
+                </div>
+            </dl>
+            <label class="search-field" for="semanticModelSearch">
+                <span>Search semantic models</span>
+                <input id="semanticModelSearch" type="search" placeholder="Search by model name or path" autocomplete="off" disabled>
+            </label>
+            <p class="fabric-status" id="semanticModelStatus" role="status"></p>
+            <div class="selection-list" id="semanticModelList" aria-label="Repository semantic models"></div>
+            <button class="fabric-action-button" id="createPresetButton" type="button" disabled>Create Preset</button>
+            <p class="fabric-status" id="createPresetStatus" role="status"></p>
+        </section>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script src="{{ url_for('fabric.static', filename='js/home.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,808 @@
+.fabric-dashboard {
+    display: grid;
+    max-width: 1080px;
+    min-height: calc(100vh - 180px);
+    margin: 0 auto;
+    gap: 18px;
+    align-content: start;
+}
+
+.fabric-preset-page {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.impact-tables {
+    display: grid;
+    gap: 16px;
+    margin: 18px 0;
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+.impact-launch-button {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    margin-top: 14px;
+    text-decoration: none;
+}
+
+#fabricImpact {
+    max-width: 1240px;
+    width: 100%;
+}
+
+.impact-selection-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+}
+
+.impact-instruction-pane {
+    display: grid;
+    gap: 12px;
+}
+
+.impact-table,
+.impact-finding {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+}
+
+.impact-column {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 0;
+    border-top: 1px solid var(--border);
+}
+
+.impact-column > label:first-child {
+    display: flex;
+    align-items: center;
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+#impactInstructions,
+#impactLiveModel,
+#impactSearch {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    background: var(--surface);
+}
+
+.impact-live-model-picker {
+    display: grid;
+    gap: 12px;
+    margin: 18px 0;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+#impactInstructions {
+    min-height: 220px;
+    resize: vertical;
+}
+
+.impact-saved-instructions {
+    white-space: pre-wrap;
+}
+
+.impact-finding {
+    margin-top: 12px;
+}
+
+.impact-finding pre {
+    padding: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--surface-strong);
+}
+
+#fabricImpact .is-error {
+    color: var(--danger);
+}
+
+.impact-table summary {
+    cursor: pointer;
+}
+
+.impact-source-details,
+.impact-dependency-details {
+    margin: 14px 0;
+}
+
+#fabricImpact h3 small {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.impact-lineage {
+    max-height: 420px;
+    overflow: auto;
+}
+
+.impact-lineage-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.impact-lineage-table th,
+.impact-lineage-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+
+.lineage-graph-section,
+#semanticModelPresetLayout {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.preset-home-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.fabric-action-button {
+    min-height: 44px;
+    padding: 12px 18px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--button-text);
+    background: var(--accent);
+}
+
+.fabric-action-button:hover:not(:disabled) {
+    background: var(--accent-strong);
+}
+
+.fabric-action-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.fabric-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 12px;
+}
+
+.fabric-preset-card {
+    display: grid;
+    align-content: space-between;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface);
+    overflow-wrap: anywhere;
+}
+
+.fabric-preset-card:hover,
+.fabric-preset-card:focus-within {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.fabric-preset-link {
+    display: grid;
+    gap: 8px;
+    padding: 18px;
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.fabric-delete-preset-button {
+    justify-self: start;
+    min-height: 36px;
+    margin: 0 18px 18px;
+    padding: 8px 12px;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    background: transparent;
+}
+
+.fabric-delete-preset-button:hover:not(:disabled) {
+    color: var(--button-text);
+    background: var(--danger);
+}
+
+.fabric-preset-card small {
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+#createPresetButton {
+    margin-top: 18px;
+}
+
+#createPresetStatus {
+    margin-top: 12px;
+}
+
+.lineage-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 12px;
+}
+
+.lineage-summary div {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.lineage-summary dt,
+.lineage-tables small,
+.lineage-evidence {
+    color: var(--muted);
+    font-size: 0.8rem;
+    overflow-wrap: anywhere;
+}
+
+.lineage-summary dd {
+    margin: 6px 0 0;
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.lineage-downloads {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.lineage-graph-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.lineage-graph-toolbar button,
+.lineage-graph-toolbar input,
+.lineage-graph-toolbar select {
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    background: var(--surface-strong);
+}
+
+.lineage-graph-toolbar select {
+    max-width: min(100%, 300px);
+}
+
+.lineage-graph .is-hidden {
+    display: none;
+}
+
+.lineage-edge-caption {
+    visibility: hidden;
+    fill: var(--text);
+    stroke: var(--surface-strong);
+    stroke-width: 4px;
+    paint-order: stroke;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.lineage-graph-edge:is(:hover, :focus, .is-selected) .lineage-edge-caption {
+    visibility: visible;
+}
+
+.lineage-graph-toolbar input {
+    flex: 1 1 210px;
+    min-width: 0;
+}
+
+.lineage-graph-toolbar .lineage-read-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.lineage-graph-toolbar input[type="checkbox"] {
+    flex: none;
+    min-height: auto;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--accent);
+}
+
+.lineage-graph-toolbar button {
+    cursor: pointer;
+}
+
+.lineage-graph-toolbar button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.lineage-graph {
+    display: block;
+    width: 100%;
+    height: clamp(380px, 65vh, 680px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-strong);
+    touch-action: none;
+    cursor: grab;
+}
+
+.lineage-graph:active,
+.lineage-graph-node:active {
+    cursor: grabbing;
+}
+
+.lineage-graph-node {
+    cursor: move;
+    --node-color: var(--accent);
+}
+
+.lineage-graph-node rect {
+    fill: var(--surface);
+    stroke: var(--node-color);
+    stroke-width: 2;
+}
+
+.lineage-graph-node[data-type="Table"] {
+    --node-color: #15947a;
+}
+
+.lineage-graph-node[data-type="Notebook"] {
+    --node-color: #9470db;
+}
+
+.lineage-graph-node[data-type="DataPipeline"] {
+    --node-color: #b67920;
+}
+
+.lineage-node-dot {
+    display: none;
+    fill: var(--node-color);
+    stroke: var(--node-color);
+    stroke-width: 6;
+    vector-effect: non-scaling-stroke;
+}
+
+.lineage-graph.is-compact .lineage-node-dot {
+    display: inline;
+}
+
+.lineage-graph.is-compact .lineage-node-card,
+.lineage-graph.is-compact .lineage-edge-caption {
+    display: none;
+}
+
+.lineage-graph.is-compact .lineage-graph-edge path {
+    marker-end: none;
+}
+
+.lineage-graph-node:is(.is-selected, .is-search-match, :focus) .lineage-node-dot {
+    stroke: var(--text);
+}
+
+.lineage-graph-node text {
+    fill: var(--text);
+    pointer-events: none;
+}
+
+.lineage-node-label {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.lineage-graph-node .lineage-node-type,
+.lineage-graph-node .lineage-node-caption {
+    fill: var(--muted);
+    font-size: 10px;
+}
+
+.lineage-graph-node:is(.is-selected, .is-search-match, :focus) rect {
+    fill: var(--accent-soft);
+    stroke-width: 4;
+}
+
+.lineage-graph-edge path {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 1.8;
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.lineage-arrow {
+    fill: var(--muted);
+}
+
+.lineage-flow-arrow {
+    fill: var(--accent);
+}
+
+.lineage-graph.has-focused-flow .lineage-graph-node:not(.is-on-path) {
+    opacity: 0.18;
+}
+
+.lineage-graph.has-focused-flow .lineage-graph-edge:not(.is-on-path) {
+    opacity: 0.08;
+}
+
+.lineage-graph .lineage-graph-edge.is-on-path path {
+    stroke: var(--accent);
+    stroke-width: 3;
+    marker-end: url(#lineageFlowArrow);
+}
+
+.lineage-graph-edge.is-on-path .lineage-edge-caption {
+    visibility: visible;
+}
+
+.lineage-graph-node.is-on-path rect {
+    stroke-width: 3;
+}
+
+.lineage-graph-edge.is-unverified path {
+    stroke-dasharray: 6 5;
+}
+
+.lineage-graph-edge:is(.is-selected, :focus) path {
+    stroke: var(--accent);
+    stroke-width: 3;
+}
+
+.lineage-graph-details {
+    min-height: 70px;
+    max-height: 250px;
+    overflow: auto;
+    margin-bottom: 18px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+}
+
+.lineage-graph-details p {
+    margin: 5px 0;
+}
+
+.lineage-record {
+    margin: 10px 0;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+}
+
+.lineage-record[hidden] {
+    display: none;
+}
+
+.lineage-record summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.lineage-record h4,
+#semanticModelPresetLayout h3 {
+    margin: 18px 0 10px;
+}
+
+.lineage-tables {
+    padding-left: 22px;
+}
+
+.lineage-tables li {
+    margin: 10px 0;
+}
+
+.lineage-tables small {
+    display: block;
+    margin-top: 4px;
+}
+
+.fabric-step {
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+.step-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.step-heading h2 {
+    font-size: 1.3rem;
+}
+
+.step-number {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 50%;
+    color: var(--button-text);
+    background: var(--accent);
+    font-weight: 800;
+}
+
+.step-kicker {
+    margin-bottom: 3px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.search-field {
+    display: grid;
+    gap: 7px;
+    margin-bottom: 14px;
+    color: var(--text);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.search-field input {
+    width: 100%;
+    min-height: 46px;
+    padding: 0 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface-strong);
+}
+
+.fabric-status {
+    margin: 0 0 14px;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.fabric-status.is-error {
+    color: var(--danger);
+    font-weight: 700;
+}
+
+.lineage-processing-screen {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    display: grid;
+    padding: 24px;
+    place-items: center;
+    background: rgb(15 23 42 / 72%);
+    backdrop-filter: blur(4px);
+}
+
+.lineage-processing-screen[hidden] {
+    display: none;
+}
+
+.lineage-processing-card {
+    width: min(100%, 620px);
+    max-height: calc(100vh - 48px);
+    padding: 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
+    overflow-y: auto;
+}
+
+.lineage-processing-card h3 {
+    margin: 4px 0 10px;
+}
+
+.lineage-spinner {
+    width: 42px;
+    height: 42px;
+    margin-bottom: 18px;
+    border: 4px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: lineage-spin 0.9s linear infinite;
+}
+
+.lineage-progress {
+    height: 10px;
+    margin: 20px 0;
+    border-radius: 999px;
+    background: var(--surface-strong);
+    overflow: hidden;
+}
+
+.lineage-progress span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 220ms ease;
+}
+
+.lineage-progress-steps {
+    display: grid;
+    gap: 10px;
+    padding: 0;
+    list-style: none;
+}
+
+.lineage-progress-steps li {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    column-gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.lineage-progress-steps li::before {
+    grid-row: 1 / span 2;
+    content: "\2022";
+    color: var(--muted);
+    font-size: 1.4rem;
+    line-height: 1;
+    text-align: center;
+}
+
+.lineage-progress-steps li[data-state="active"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.lineage-progress-steps li[data-state="active"]::before {
+    content: "\2026";
+    color: var(--accent);
+}
+
+.lineage-progress-steps li[data-state="complete"]::before {
+    content: "\2713";
+    color: var(--accent);
+    font-weight: 800;
+}
+
+.lineage-progress-steps li[data-state="error"] {
+    border-color: var(--danger);
+}
+
+.lineage-progress-steps li[data-state="error"]::before {
+    content: "!";
+    color: var(--danger);
+    font-weight: 800;
+}
+
+.lineage-progress-steps span {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+@keyframes lineage-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lineage-spinner {
+        animation: none;
+    }
+
+    .lineage-progress span {
+        transition: none;
+    }
+}
+
+.selection-list {
+    display: grid;
+    max-height: 360px;
+    overflow-y: auto;
+    gap: 8px;
+}
+
+.selection-option {
+    display: grid;
+    width: 100%;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface);
+    text-align: left;
+    text-transform: none;
+}
+
+.selection-option:hover,
+.selection-option:focus-visible,
+.selection-option.is-selected {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.selection-option strong {
+    overflow-wrap: anywhere;
+}
+
+.selection-option small {
+    color: var(--muted);
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.selection-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0 0 18px;
+}
+
+.selection-details div {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-strong);
+}
+
+.selection-details dt {
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.selection-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 800;
+}
+
+.empty-workspace-section {
+    min-height: 180px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: var(--right-stripe);
+}
+
+@media (max-width: 640px) {
+    .fabric-step {
+        padding: 18px;
+    }
+
+    .selection-details {
+        grid-template-columns: 1fr;
+    }
+}

@@ -195,9 +195,7 @@ cython_debug/
 .abstra/
 
 # Generated AI refresh metadata
-output/ai_refresh_metadata/
-output/ai_table_precedence/
-output/ai_batch_creation/
+output/
 
 # Visual Studio Code
 #   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
@@ -228,3 +226,6 @@ sample.json
 #presets directory
 presets/
 .playwright-mcp/
+
+# Local Fabric repository snapshots
+/repo/

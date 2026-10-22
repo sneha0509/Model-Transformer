@@ -1,0 +1,1 @@
+"""Legacy Power BI dashboard."""

@@ -1,0 +1,9 @@
+{% extends "shared/base.html" %}
+
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('legacy.static', filename='css/styles.css') }}">
+{% endblock %}
+
+{% block dashboard_navigation %}
+    <a class="portal-nav-link" href="{{ url_for('portal.home') }}">Dashboards</a>
+{% endblock %}

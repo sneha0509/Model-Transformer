@@ -1,6 +1,345 @@
 # Model-Transformer
 Smart AI powered model refresher based on Python and LLMs
 
+## Application areas
+
+Run the application with `python driver.py`. The initial screen keeps the
+Microsoft browser sign-in flow. After sign-in, choose **Legacy** or **Fabric**:
+
+- **Legacy** (`/legacy`) contains the existing presets, model/table selection,
+  batch editing, manual refresh, and AI-powered refresh workflows.
+- **Fabric** (`/fabric`) lists the signed-in user's Fabric workspaces and
+  resolves each workspace's linked Azure DevOps repository. If the workspace
+  is not linked, the user can select an accessible Azure DevOps repository for
+  the current flow without changing the workspace's Git settings. Select one
+  repository semantic model to create a preset, which appears on Fabric home.
+  The preset page shows source details, the local repository location, and an
+  interactive semantic-model-first lineage graph with JSON and CSV downloads.
+- **Dashboards** in either header returns to the selection screen without
+  signing out.
+
+The application is organized by area:
+
+```text
+driver.py                   Application entry point
+shared/
+    app.py                  Flask factory and blueprint registration
+    paths.py                Stable project-root resolution
+    backend/                Microsoft authentication, login/logout, request helpers
+    frontend/               Login, dashboard picker, shell, theme, and session UI
+legacy/
+    backend/                Power BI clients, metadata, presets, batches, AI services, API routes
+    frontend/               Legacy page routes, templates, and styles
+fabric/
+    backend/                Workspace/Git, repository models, presets, static lineage
+    frontend/               Fabric selection flow, saved presets, lineage graph and inventory
+```
+
+Feature code stays within its own area; shared infrastructure does not call
+Legacy services. The shared application factory is the composition point.
+The Fabric REST client inside `legacy/backend` remains part of Legacy because
+the existing refresh workflow uses it for lineage and model definitions.
+
+Shared authentication uses `/api/login` and `/api/logout`. Legacy API routes
+now live under `/api/legacy`; selected-table and saved-batch pages live under
+`/legacy`. Workspace discovery happens only when the Legacy model selector is
+opened, not during login. Opening Fabric loads its own workspace and preset lists.
+
+Fabric semantic model discovery scans the selected repository's linked branch
+(or its default branch for a manually selected repository). It recognizes model
+folders containing `definition.pbism` or `model.bim`, including TMDL projects,
+and uses `.platform` display names when present. Fabric presets are stored under
+`presets/fabric`, separately from Legacy presets. Selecting the same workspace,
+repository, branch, and model path again reopens the existing preset rather than
+creating a duplicate. No remote repository files or Fabric Git settings are changed.
+Use **Delete** on a saved preset's Fabric home card to remove it after confirmation.
+Only that preset is deleted; the shared local repository snapshot and other
+presets are retained. Recreating a deleted preset reuses the existing snapshot.
+
+Creating or opening a Fabric preset runs `git clone` for the selected Azure DevOps
+repository branch directly into the project-root `repo` folder only if its local
+checkout is missing. Git must be installed and available on the server's `PATH`.
+All presets for the same repository and branch share that snapshot, regardless
+of workspace or semantic model. Snapshots use readable folders:
+`repo/<repository-name>/<branch-name>/code`, with branch slashes replaced by
+`__` and characters invalid on Windows replaced by `_`. Identity metadata
+prevents different sources from sharing a folder; a short suffix is added only
+when names collide. Renamed repositories keep their existing local folder.
+Previously downloaded snapshots, including the older hashed folders, are still
+reused without cloning again. New downloads are real Git checkouts with a `.git`
+directory. Git's `core.longpaths` option and Windows extended-length filesystem
+paths support deeply nested repository files. Existing checkouts are reused
+across application restarts without fetching, pulling, or checking for updates.
+There is no temporary `.download-*` folder, ZIP extraction, copy, or directory
+rename: Git writes directly to `repo/<repository-name>/<branch-name>/code`.
+The checkout is marked complete only after Git succeeds. A failed clone cleans
+up its partial code folder and can be retried without saving a new preset.
+Manual refreshes clone into a sibling staging folder and then replace `code`;
+transient Windows access-denied errors during that swap are retried. If the
+application stops between swap steps, the previous snapshot is restored and
+the abandoned staging folder is removed on the next open or refresh.
+If the server is interrupted or cleanup fails, an incomplete checkout is reported
+instead of reused; after checking that no clone is running, remove only the
+reported incomplete code folder before retrying. Previously saved
+presets clone their repository on first opening if its local copy is missing.
+The local `repo` folder is
+excluded from version control, and the signed-in user's Azure DevOps access is
+passed to Git through its subprocess environment only when cloning is needed.
+Tokens are not included in command-line arguments, remote URLs, or saved Git
+configuration. Repository model discovery still queries the remote branch and
+does not update the saved local checkout. Clone failures show the repository,
+branch, Git exit code when available, and Git error message in Fabric and the
+application log, with authorization credentials redacted. A missing Git executable
+or a clone exceeding the ten-minute timeout is reported explicitly.
+
+Authentication is tracked in a signed, HTTP-only application session. A stored
+browser profile alone does not grant access to dashboards or APIs. Sign-out
+clears the application session and cached Microsoft credential; it does not
+sign the user out of Microsoft globally. Set `FLASK_SECRET_KEY` in the
+environment to keep application sessions valid across server restarts;
+otherwise a process-local random key is used.
+
+Existing `presets` and `output/ai_*` directories stay at the project root so
+saved data continues to work without migration. Legacy refresh failure reports
+are written to `output/legacy/failure`. Paths resolve from the project root
+regardless of the current working directory.
+
+Run the groundwork regression tests with:
+
+```powershell
+python -m unittest shared.tests.test_portal legacy.tests.test_legacy fabric.tests.test_fabric
+```
+
+## Fabric artifact mapping
+
+Fabric presets start lineage at the **selected semantic model**, then follow its
+physical source tables to **producer notebooks** and the **pipelines** that run
+them. The graph reads TMDL or `model.bim`, including Direct Lake entity partitions,
+literal Power Query schema/item navigation, and literal SQL queries. Logical
+model table names and physical source names are kept separately. Calculated
+tables and unresolved sources remain visible without invented producers.
+Resolved notebook callers and parent pipelines are followed with cycle protection.
+Readers of a source table are not presented as its upstream producers.
+
+The preset graph supports node dragging, canvas panning, scroll/pinch zoom,
+zoom buttons, fit-to-view, layout reset, node search, and a model-table selector
+for focusing on one branch. Nodes and relationships are keyboard accessible;
+select either to inspect source evidence and pipeline invocation parameters.
+Confirmed source identities use solid relationships. Table-name matches whose
+schema, workspace or lakehouse identity cannot be proved (for example, a OneLake GUID
+versus a notebook's explicit lakehouse name) are **dashed, unverified candidates**,
+not confirmed lineage. Conflicting known scopes are excluded. Multiple possible
+producers are retained rather than arbitrarily selecting one. Missing producers,
+unsupported partition expressions, and uncertain scopes are listed as analysis
+gaps. This remains static notebook-level lineage, not proof of runtime execution
+or column-level flow.
+
+Older saved mappings rebuild automatically from the existing local snapshot on
+their next open, without fetching or pulling the repository. **Refresh repository
+& lineage** still explicitly downloads the latest branch and regenerates reports.
+
+Opening a Fabric preset scans **all Fabric `.DataPipeline` and `.Notebook`
+folders in its downloaded repository snapshot**, not only artifacts related to
+the selected semantic model, to discover the selected model's producers and
+orchestrators. The graph is model-specific; the complete searchable artifact
+inventory remains below it. Legacy folders and Git internals are excluded.
+Windows long-path support keeps deeply nested artifacts in the scan.
+
+The mapping joins pipeline notebook IDs to exported `.platform` logical IDs,
+includes nested activity containers and child-pipeline references, and resolves
+notebook table dependencies using Python AST inspection and Spark SQL parsing.
+Notebook code is never executed and no cloud artifacts are changed. CTEs and
+session temporary views are excluded from persisted tables. Each dependency
+includes the notebook source path, line, and operation; pipeline calls include
+the activity JSON pointer, parameters, workspace reference, and dependencies.
+The page includes pipeline mappings, a complete notebook inventory, reverse
+table producer/consumer mappings, and explicit analysis gaps.
+
+Literal pipeline parameter overrides apply only to tagged parameter cells.
+Notebook-default and pipeline-invocation contexts are reported separately.
+Unqualified table identity includes its exported default lakehouse binding;
+explicit workspace/lakehouse names are not guessed to be equivalent to GUIDs.
+Runtime expressions, unsupported syntax, missing IDs, and unmatched parameters
+are disclosed as gaps rather than silently omitted or guessed. Dependencies
+are notebook-level, not column-level or proof that every read feeds every write.
+
+Reports are regenerated on page opening and persisted under
+`output/fabric/lineage/<preset-id>/mapping.json` and `mapping.csv`.
+The JSON contains the selected model's sources and graph, full inventory, calls,
+tables, reverse mappings, evidence, and issues. The CSV provides model-relationship
+evidence rows (including scope verification status), each pipeline/table operation
+and notebook-default context, plus unresolved call rows. Downloads require
+sign-in and an existing preset. Scanning uses the local snapshot; it does not
+fetch or pull the repository. Install the declared `sqlglot` dependency through
+the normal requirements workflow.
+
+Run Fabric mapping and regression tests with:
+
+```powershell
+python -m unittest fabric.tests.test_lineage fabric.tests.test_fabric
+```
+
+## Fabric AI impact analysis and schema cascade recommendations
+
+Open a Fabric preset and choose the **Impact Analysis** button. This desktop
+page fetches the selected semantic model's **current tables and columns through
+the Fabric REST API** using the signed-in Microsoft account. It resolves the
+model by name in the preset workspace (including paginated results), retrieves
+its TMSL definition, and polls long-running definition requests when necessary.
+Missing or ambiguous models and denied API access are reported explicitly;
+there is no fallback to an outdated repository schema.
+If the repository display name differs from the deployed model, the page lists
+the workspace's accessible live semantic models for explicit selection.
+After a successful definition fetch, **Load tables & columns** saves the chosen
+Fabric model ID in that preset. Later schema requests use this ID, even if the
+live model is renamed; the repository selection and lineage path stay unchanged.
+A deleted or inaccessible binding requires reselection rather than silently
+switching to a different same-named model. An empty workspace list explains that
+the model must be deployed and accessible in the selected workspace.
+
+Select impacted tables or individual columns across multiple tables (up to 200
+columns). Describe **all intended changes in one shared instruction box**;
+there are no per-column change-type selectors, target fields, or comment boxes.
+Include table/column names and explain whether the physical source column,
+logical model column, or both change, along with target names/types and any
+replacement, migration, or business rules. The complete shared instructions are
+passed to Copilot for each artifact and retained in the report.
+Physical `sourceColumn` mappings and partition sources are preserved separately
+from logical table and column names.
+
+This version is **review-only**. It neither edits local files nor changes live
+Fabric items or source schemas. Analysis uses the **live selected model
+definition** from Fabric and inventories exported Fabric notebooks and other
+semantic models in the preset's **existing local repository snapshot**.
+The selection page does not need the snapshot, but running the code analysis
+requires it. Use the preset's explicit **Refresh repository &
+lineage** action before analysis when newer branch content is needed; impact
+analysis never fetches or pulls automatically.
+
+The backend uses the official `github-copilot-sdk` with the desktop's signed-in
+GitHub Copilot identity. Run `copilot login` on the desktop and complete sign-in
+before analyzing. Microsoft sign-in and GitHub Copilot sign-in are separate.
+The existing SDK dependency is sufficient; no API key or raw Copilot token is
+accepted by this workflow. Optionally set `FABRIC_IMPACT_MODEL` to an available
+Copilot model ID. When unset (or set to `auto`), the application selects an
+available concrete model with advertised context limits that fits the targeted
+request, rather than creating a session with the limit-less `auto` router.
+Automatic selection prefers a lower advertised billing multiplier; when pricing
+is unavailable, lightweight mini/Haiku/Flash models are preferred. Policy-disabled
+or unconfigured models are excluded. Explicit concrete IDs are honored, never
+silently replaced. If the configured model is unavailable or lacks usable limits,
+the error lists eligible IDs. No context window is guessed, and every session is
+checked to confirm the selected model before inference. If no model fits, the
+artifact is skipped with the existing exact context-budget gap. This desktop workflow
+does not require a separate approval checkbox before analysis.
+
+Before inference, analysis maps the selected columns' physical source tables and
+backtracks notebook producers and their upstream inputs, with cycle protection.
+It separately follows readers and downstream writes for cascade candidates,
+without expanding unrelated consumers of upstream-only tables. Notebook callers
+and parent pipeline invocations supply execution context. Known conflicting
+schemas/workspaces/lakehouses are excluded; unverified scopes remain candidates
+with explicit gaps. The selected live model and other models using affected
+physical tables are retained. Other artifacts are marked `out_of_scope`, not
+claimed as analyzed.
+
+Code, not AI, then builds an **object-level impacted lineage**. The saved graph
+contains selected columns, physical tables, artifacts, notebook cells, model
+objects and pipeline activities, with typed dependency edges and evidence levels.
+TMDL and TMSL (`model.bim`) indexing resolves source mappings, DAX references and
+transitive measure/calculated-table dependencies, relationship endpoints,
+sort-by columns, hierarchies, role filters and source expressions. A dependency
+is a review candidate, not a claim that an edit is required. Pipeline activities
+that invoke affected notebooks/pipelines or contain literal physical-table
+metadata are targeted separately; unrelated activities are excluded. Referenced
+pipeline parameter/variable declarations are included without unrelated global
+metadata. Literal parameter defaults can identify candidates, but runtime overrides
+and dynamic expressions still require validation. When a downstream table is
+known but its derived column mapping cannot be resolved, its source binding stays
+in scope and the missing column/calculation coverage is explicitly disclosed.
+
+Notebook requests contain **complete relevant code cells**, not a concatenated
+whole-notebook export. Static variable, function, import and temporary-view
+dependencies retain prerequisite and consuming cells, including parameter cells.
+When cell dependencies cannot be safely resolved (for example, non-Python syntax
+or dynamic SQL), the table-lineage pass conservatively retains candidates, but
+the AI targeting pass sends only evidenced cells and resolvable prerequisites.
+Omitted dynamic dependencies are explicit manual-review gaps, not a reason to
+send the entire notebook. Imports and parameter prerequisites remain context
+rather than being presented as affected code by default. Markdown, outputs and
+Fabric export metadata are excluded. Evidence retains original notebook cell
+numbers and exported-code lines; fixes are validated against supplied cells only.
+The report shows selected cells and per-request context budgets.
+
+AI runs **automatically only for code-identified targets**, one scoped request
+per affected artifact, with relevant selected columns and shared instructions.
+Model and pipeline requests contain exact source fragments for selected objects
+and their prerequisites, never entire definitions (even for compact single-line
+JSON). Original source coordinates are retained. Copilot explains **what the
+impact is** and **what changes are required**, including validation-only cases;
+it cannot expand the target set. Missing target explanations are coverage gaps.
+Findings include severity, confidence,
+source file/line evidence, recommended cascade steps, proposed before/after
+snippets where safe, and specific validation checks. A physical rename does
+not necessarily require renaming the logical model column or rewriting DAX.
+Runtime validation and business decisions remain the user's responsibility.
+
+The desktop page keeps table selection and a single change description together.
+Results separate the code-identified targets/dependency connections from the two
+AI answers. Source details, coverage, instructions and request budgets are
+expandable instead of competing with the main workflow.
+
+Copilot tools, shell access, configuration discovery, skills, and file hooks are
+disabled; permission requests are denied. Notebook code is never executed.
+Every finding must reference a relevant selected change, a code-identified object
+and a supplied artifact. Source
+citations and original replacement snippets are checked against the actual
+supplied live-definition or selected cell text. Invalid AI output receives one explicit correction attempt in a fresh
+session, with the original scoped input and a new budget check, so invalid output
+and conversation history cannot accumulate past the context budget. Output is
+validated again; repeated invalid output, authentication failures, SDK errors,
+and timeouts are reported as failures, never as successful empty analysis.
+
+Progress is streamed while artifacts are analyzed. Validated reports are saved
+atomically under `output/fabric/impact/<preset-id>/<report-id>.json` and can be
+downloaded from the results pane. Reports retain source selection, snapshot
+fingerprint, live model revision, shared instructions, findings, proposed fixes,
+code-generated targets and impacted lineage, AI request/cache counts, artifact
+coverage, gaps, and limitations. Validated AI explanations are cached locally under
+`output/fabric/impact/<preset-id>/cache`. Repeated identical target source,
+instructions, change context, prompt/schema and concrete model reuse the cached
+result after source validation instead of sending another inference request.
+Changes to those inputs invalidate reuse. Cache failures are logged and trigger
+fresh analysis. No Copilot connection is made when code finds no targets.
+The live definition is fetched again
+when analysis starts; if it has changed, the user must refresh the table/column
+selection. Reports and cached explanations contain code excerpts and user instructions and should be
+handled as repository-sensitive data.
+
+Notebook and other-model coverage is local and static, not a guarantee that every runtime
+dependency or workspace item was found. Dynamic code, ambiguous lakehouse scopes,
+unreadable definitions and parser gaps are disclosed. Each artifact is limited
+to 100,000 selected source characters; a request including numbered cells/model
+source, scoped lineage and change context is limited to 180,000 characters.
+Before **every** send, the active model's advertised prompt and context-window
+limits are checked against a conservative UTF-8-byte token upper bound for the
+entire request, system instructions and response JSON schema. The check reserves
+8,192 output tokens (also enforced through the SDK), 4,096 protocol tokens and an
+additional safety margin of at least 4,096 tokens or 5% of the context window.
+This deliberately conservative bound can reject input that an exact tokenizer
+would accept; it never assumes four characters per token. Automatic session
+compaction is disabled so source evidence is not silently summarized.
+Oversized requests/cell sets are skipped with an explicit gap and **partial**
+coverage, never silently truncated. If no scoped artifact can be analyzed, the
+operation fails without saving a success-shaped report.
+
+Run the focused tests and Fabric regressions with:
+
+```powershell
+python -m unittest fabric.tests.test_impact fabric.tests.test_fabric_schema fabric.tests.test_lineage fabric.tests.test_fabric
+node --check .\fabric\frontend\static\js\impact.js
+```
+
 ## Hybrid model refresh
 
 The **Start Model Refresh** action divides every configured batch into sub-batches
@@ -34,8 +373,8 @@ direct upstream Fabric lineage, limited to `id`, `type`, `displayName`, and
 Advance Data**. Lineage is retrieved from the Fabric beta endpoint
 `/v1/workspaces/<workspace_id>/items/<model_id>/relations/upstream?beta=true`.
 The implementation is in
-`core/ai_powered_refresh.py` and is exposed through the
-`/api/workspaces/<workspace_id>/models/<model_id>/ai-refresh-metadata` endpoint.
+`legacy/backend/ai_powered_refresh.py` and is exposed through the
+`/api/legacy/workspaces/<workspace_id>/models/<model_id>/ai-refresh-metadata` endpoint.
 Each generated payload is saved under `output/ai_refresh_metadata`; the
 directory is created automatically when it does not exist.
 
@@ -51,7 +390,7 @@ semantic model.
 
 ## AI table precedence
 
-`core/ai_table_precedence.py` reads the newest JSON file from
+`legacy/backend/ai_table_precedence.py` reads the newest JSON file from
 `output/ai_refresh_metadata` and asks GitHub Copilot to order every selected
 table. The prompt evaluates whether each table appears as `fromTable` or
 `toTable`, its corresponding cardinality, relationship activity, and filter
@@ -63,7 +402,7 @@ table's precedence entry without LLM processing.
 
 ## AI batch creation
 
-`core/ai_batch_creation.py` reads a saved JSON file from
+`legacy/backend/ai_batch_creation.py` reads a saved JSON file from
 `output/ai_table_precedence` and asks GitHub Copilot to create an optimized
 batch plan. Copilot evaluates row count, column count, partition count, and
 partition TMDL complexity. Adjacent simple or moderate tables can share a
@@ -98,13 +437,13 @@ downloaded in advance with `python -m copilot download-runtime`. Run the script
 against the newest metadata file:
 
 ```powershell
-python -m core.ai_table_precedence
+python -m legacy.backend.ai_table_precedence
 ```
 
 Or pass a specific metadata file:
 
 ```powershell
-python -m core.ai_table_precedence output\ai_refresh_metadata\<file-name>.json
+python -m legacy.backend.ai_table_precedence output\ai_refresh_metadata\<file-name>.json
 ```
 
 In the UI, **AI Powered Refresh** keeps the full-screen loading overlay active
