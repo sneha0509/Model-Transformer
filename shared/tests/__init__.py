@@ -1,1 +1,0 @@
-"""Shared portal regression tests."""

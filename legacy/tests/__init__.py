@@ -1,1 +1,0 @@
-"""Legacy dashboard regression tests."""

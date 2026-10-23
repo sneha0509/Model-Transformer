@@ -11,14 +11,6 @@
     grid-template-columns: minmax(0, 1fr);
 }
 
-.impact-tables {
-    display: grid;
-    gap: 16px;
-    margin: 18px 0;
-    max-height: 65vh;
-    overflow-y: auto;
-}
-
 .impact-launch-button {
     display: inline-flex;
     align-items: center;
@@ -27,39 +19,272 @@
     text-decoration: none;
 }
 
+.impact-app-shell {
+    min-width: 1120px;
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: 24px 32px 48px;
+}
+
 #fabricImpact {
-    max-width: 1240px;
+    --impact-warning: #916009;
+    max-width: 1440px;
     width: 100%;
+    gap: 24px;
+    line-height: 1.55;
+}
+
+:root[data-theme="dark"] #fabricImpact {
+    --impact-warning: #edc073;
+}
+
+#fabricImpact button {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: none;
+}
+
+#fabricImpact :is(button, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 3px;
+}
+
+.impact-page-heading,
+.impact-report-heading,
+.impact-artifact-heading,
+.impact-selection-toolbar,
+.impact-submit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.impact-page-heading {
+    align-items: flex-start;
+    padding: 12px 0 0;
+}
+
+#fabricImpact .impact-page-heading h2 {
+    margin: 4px 0 8px;
+    font-size: 1.85rem;
+    font-weight: 650;
+    letter-spacing: -0.04em;
+}
+
+.impact-page-description {
+    margin-bottom: 18px;
+    color: var(--muted);
+}
+
+.impact-context {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 28px;
+    margin: 0;
+    font-size: 0.8rem;
+}
+
+.impact-context > div {
+    display: flex;
+    gap: 8px;
+}
+
+.impact-context dt,
+.impact-muted {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.impact-context dd {
+    margin: 0;
+    font-weight: 600;
+}
+
+.impact-badge,
+.impact-priority,
+.impact-change-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.impact-badge {
+    flex-shrink: 0;
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: transparent;
+}
+
+.impact-schema-status {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+#fabricImpact .impact-schema-status > .fabric-status {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.impact-schema-status > :is(form, details) {
+    grid-column: 1 / -1;
+}
+
+#fabricImpact .impact-secondary-button {
+    min-height: 36px;
+    padding: 9px 14px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+#fabricImpact .impact-secondary-button:hover:not(:disabled) {
+    background: var(--surface-strong);
+}
+
+#impactForm {
+    padding: 0;
+    overflow: hidden;
 }
 
 .impact-selection-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    gap: 28px;
-    align-items: start;
+    grid-template-columns: minmax(340px, 0.9fr) minmax(440px, 1.1fr);
+    align-items: stretch;
+}
+
+.impact-selection-pane,
+.impact-instruction-pane {
+    min-width: 0;
+    padding: 26px;
+}
+
+.impact-selection-pane {
+    border-right: 1px solid var(--border);
 }
 
 .impact-instruction-pane {
-    display: grid;
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(155deg, var(--surface), var(--right-stripe));
 }
 
-.impact-table,
-.impact-finding {
-    padding: 14px;
+.impact-pane-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.impact-step-number {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border-radius: 7px;
+    color: var(--primary);
+    background: var(--primary-soft);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+#fabricImpact .impact-pane-heading h2 {
+    font-size: 1rem;
+}
+
+#impactInstructions,
+#impactLiveModel,
+#impactSearch {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    background: var(--surface);
+    font: inherit;
+    font-size: 0.88rem;
+}
+
+#impactSearch {
+    background: var(--right-stripe);
+}
+
+.impact-selection-toolbar {
+    margin: 16px 0 10px;
+}
+
+#fabricImpact .impact-selection-toolbar .fabric-status {
+    margin: 0;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.impact-tables {
+    display: grid;
+    gap: 8px;
+    max-height: 360px;
+    min-height: 180px;
+    align-content: start;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.impact-table {
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow-wrap: anywhere;
 }
 
+.impact-table > summary {
+    padding: 12px;
+    cursor: pointer;
+    font-size: 0.86rem;
+}
+
+.impact-table[open] > summary {
+    background: var(--right-stripe);
+    border-radius: 8px 8px 0 0;
+}
+
+.impact-table-name {
+    margin-left: 8px;
+    font-weight: 600;
+}
+
+.impact-table-count {
+    float: right;
+    min-width: 24px;
+    border-radius: 5px;
+    color: var(--muted);
+    background: var(--surface-strong);
+    text-align: center;
+    font-size: 0.76rem;
+}
+
 .impact-column {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 14px 0;
+    gap: 12px;
+    padding: 10px 14px;
     border-top: 1px solid var(--border);
+    font-size: 0.83rem;
+}
+
+.impact-column:hover {
+    background: var(--right-stripe);
 }
 
 .impact-column > label:first-child {
@@ -68,71 +293,492 @@
     flex-direction: row-reverse;
     justify-content: flex-end;
     gap: 8px;
+    cursor: pointer;
 }
 
-#impactInstructions,
-#impactLiveModel,
-#impactSearch {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    background: var(--surface);
+#fabricImpact input[type="checkbox"] {
+    accent-color: var(--primary);
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+.impact-column small {
+    color: var(--muted);
 }
 
 .impact-live-model-picker {
     display: grid;
     gap: 12px;
-    margin: 18px 0;
-    padding: 16px;
+    margin: 0;
+    padding: 18px;
     border: 1px solid var(--border);
     border-radius: 8px;
 }
 
+#fabricImpact #impactInstructionHelp {
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+
 #impactInstructions {
-    min-height: 220px;
+    flex: 1;
+    min-height: 230px;
     resize: vertical;
+    line-height: 1.65;
+}
+
+.impact-submit-row {
+    margin-top: 22px;
+}
+
+#fabricImpact .impact-submit-row .fabric-status {
+    margin: 0;
+    max-width: 250px;
+    font-size: 0.8rem;
+}
+
+#analyzeImpactButton {
+    flex-shrink: 0;
+}
+
+#impactResults {
+    padding: 28px;
+}
+
+.impact-report-heading {
+    align-items: flex-start;
+    padding-bottom: 22px;
+}
+
+#fabricImpact .impact-report-heading h2 {
+    margin: 4px 0 8px;
+    font-size: 1.5rem;
+    letter-spacing: -0.025em;
+}
+
+#fabricImpact #impactReportSummary {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.impact-report-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.impact-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--right-stripe);
+}
+
+.impact-metric > span {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.impact-metric > strong {
+    font-size: 1.9rem;
+    line-height: 1.1;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.impact-metric.is-high {
+    border-color: color-mix(in srgb, var(--danger) 25%, var(--border));
+    background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+
+.impact-metric.is-high > strong {
+    color: var(--danger);
+}
+
+.impact-request-details,
+.impact-dependency-details {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 0.85rem;
+}
+
+#fabricImpact summary {
+    cursor: pointer;
+}
+
+.impact-request-details summary > span {
+    margin-left: 10px;
+    font-weight: 400;
 }
 
 .impact-saved-instructions {
+    margin: 16px 0 12px;
     white-space: pre-wrap;
+}
+
+.impact-change-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.impact-change-chip {
+    background: var(--surface-strong);
+    font-weight: 400;
+}
+
+.impact-section-heading {
+    margin: 30px 0 16px;
+}
+
+#fabricImpact .impact-section-heading h3,
+#fabricImpact .impact-review-notes h3 {
+    margin: 0 0 6px;
+    color: var(--text);
+    font-size: 1.1rem;
+    font-weight: 650;
+    text-transform: none;
+}
+
+#fabricImpact .impact-section-heading p {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.impact-artifact-filters {
+    display: flex;
+    gap: 6px;
+    padding: 5px;
+    margin-bottom: 20px;
+    width: fit-content;
+    background: var(--surface-strong);
+    border-radius: 8px;
+}
+
+.impact-filter-button {
+    padding: 9px 14px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--muted);
+    background: transparent;
+}
+
+.impact-filter-button[aria-pressed="true"] {
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--surface);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
+}
+
+.impact-filter-button:hover {
+    color: var(--text);
+}
+
+#impactFindings {
+    display: grid;
+    gap: 20px;
+}
+
+.impact-artifact-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.impact-artifact-heading {
+    align-items: flex-start;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(110deg, var(--right-stripe), var(--surface));
+}
+
+.impact-artifact-type {
+    margin-bottom: 4px;
+    color: var(--primary);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.impact-artifact-name {
+    margin: 0 0 5px;
+    font-size: 1.1rem;
+    font-weight: 650;
+}
+
+.impact-artifact-location {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.impact-priority {
+    white-space: nowrap;
+}
+
+.impact-priority-high {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 20%, var(--border));
+    background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+
+.impact-priority-medium {
+    color: var(--impact-warning);
+    border-color: color-mix(in srgb, var(--impact-warning) 25%, var(--border));
+    background: color-mix(in srgb, var(--impact-warning) 7%, var(--surface));
+}
+
+.impact-priority-low,
+.impact-priority-review {
+    color: var(--primary);
+    background: var(--primary-soft);
 }
 
 .impact-finding {
-    margin-top: 12px;
+    padding: 22px 24px;
+    font-size: 0.88rem;
+}
+
+.impact-finding + .impact-finding {
+    border-top: 1px solid var(--border);
+}
+
+.impact-finding-location {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 18px;
+}
+
+.impact-field-label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.impact-finding-location p {
+    margin: 0;
+}
+
+.impact-finding-description {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    margin: 0;
+}
+
+.impact-finding-description > div {
+    padding: 16px 18px;
+    border-radius: 8px;
+    background: var(--right-stripe);
+}
+
+.impact-finding-description dt {
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.impact-finding-description dd {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.impact-action-items {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding-left: 20px;
+    white-space: normal;
+}
+
+.impact-related-columns {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.impact-finding-details {
+    margin-top: 16px;
+    font-size: 0.82rem;
+}
+
+.impact-finding-details summary {
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.impact-finding-details > :not(summary) {
+    margin-top: 14px;
+}
+
+.impact-finding-details ol {
+    display: grid;
+    gap: 8px;
+    padding-left: 22px;
 }
 
 .impact-finding pre {
-    padding: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     background: var(--surface-strong);
+    font-size: 0.78rem;
+}
+
+.impact-code-comparison {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.impact-code-comparison > div,
+.impact-code-fix {
+    min-width: 0;
+}
+
+.impact-code-fix {
+    margin-top: 20px;
+}
+
+.impact-code-fix h5 {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+}
+
+.impact-code-fix h6 {
+    margin: 16px 0 8px;
+    font-size: 0.82rem;
+}
+
+.impact-code-fix pre {
+    margin-bottom: 0;
+    white-space: pre;
+    overflow: auto;
+    overflow-wrap: normal;
+    tab-size: 4;
+}
+
+.impact-code-diff span {
+    display: inline-block;
+    min-width: 100%;
+}
+
+.impact-diff-removed {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.impact-diff-added {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+}
+
+.impact-diff-header,
+.impact-diff-hunk {
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.impact-related-locations {
+    margin: 0 24px 20px;
+    font-size: 0.85rem;
+}
+
+.impact-related-locations > p {
+    margin-top: 12px;
+}
+
+.impact-artifact-note {
+    margin: 18px 24px;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.impact-empty-state {
+    padding: 24px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    background: var(--right-stripe);
+    text-align: center;
+    font-size: 0.88rem;
+}
+
+.impact-review-notice {
+    margin: 18px 0 0;
+    padding: 12px 16px;
+    border-left: 3px solid var(--impact-warning);
+    border-radius: 4px;
+    color: var(--impact-warning);
+    background: color-mix(in srgb, var(--impact-warning) 7%, var(--surface));
+    font-size: 0.85rem;
+}
+
+.impact-review-notes {
+    margin-top: 24px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.impact-review-notes ul {
+    margin-bottom: 0;
+    padding-left: 20px;
+    font-size: 0.85rem;
+}
+
+.impact-review-notes li + li {
+    margin-top: 10px;
 }
 
 #fabricImpact .is-error {
     color: var(--danger);
 }
 
-.impact-table summary {
-    cursor: pointer;
+.impact-login-dialog {
+    width: min(560px, calc(100% - 32px));
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: var(--shadow);
 }
 
-.impact-source-details,
+.impact-login-dialog::backdrop {
+    background: rgb(0 0 0 / 55%);
+}
+
+.impact-login-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 20px;
+}
+
 .impact-dependency-details {
-    margin: 14px 0;
-}
-
-#fabricImpact h3 small {
-    font-size: 0.8rem;
-    font-weight: 400;
-    color: var(--muted);
+    margin-top: 24px;
 }
 
 .impact-lineage {
     max-height: 420px;
     overflow: auto;
+    margin-top: 16px;
 }
 
 .impact-lineage-table {
@@ -147,6 +793,89 @@
     border-bottom: 1px solid var(--border);
     text-align: left;
     overflow-wrap: anywhere;
+}
+
+@media print {
+    @page impact-report {
+        size: A4 landscape;
+        margin: 14mm;
+    }
+
+    .impact-app-shell {
+        page: impact-report;
+        color-scheme: light;
+        --bg: #ffffff;
+        --surface: #ffffff;
+        --surface-strong: #f1f4f6;
+        --text: #17202a;
+        --muted: #536173;
+        --border: #ccd5df;
+        --primary: #1f6f78;
+        --primary-soft: #e5f1f2;
+        --danger: #b42318;
+        --right-stripe: #f7f9fa;
+        min-width: 0;
+        padding: 0;
+        color: var(--text);
+        background: var(--surface);
+    }
+
+    .impact-app-shell .app-header,
+    #fabricImpact > :not(.impact-page-heading, #impactResults),
+    #impactReportDownload,
+    #impactArtifactFilters,
+    #fabricImpact .impact-source-reference {
+        display: none !important;
+    }
+
+    #fabricImpact,
+    :root[data-theme="dark"] #fabricImpact {
+        --impact-warning: #916009;
+        display: block;
+        max-width: none;
+        font-size: 10pt;
+    }
+
+    #fabricImpact .impact-artifact-card[hidden] {
+        display: block !important;
+    }
+
+    #fabricImpact .impact-page-heading {
+        margin-bottom: 24px;
+    }
+
+    #impactResults {
+        padding: 0;
+        border: 0;
+    }
+
+    #fabricImpact .impact-artifact-heading,
+    #fabricImpact .impact-finding-location {
+        break-after: avoid;
+    }
+
+    #fabricImpact :is(.impact-metric, .impact-finding-description, .impact-review-notes) {
+        break-inside: avoid;
+    }
+
+    #fabricImpact .impact-lineage {
+        max-height: none;
+        overflow: visible;
+    }
+
+    #fabricImpact .impact-code-fix pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        overflow: visible;
+    }
+
+    #fabricImpact .impact-code-comparison {
+        break-inside: avoid;
+    }
+
+    #fabricImpact .impact-badge {
+        white-space: nowrap;
+    }
 }
 
 
@@ -798,6 +1527,10 @@
 }
 
 @media (max-width: 640px) {
+    .impact-code-comparison {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .fabric-step {
         padding: 18px;
     }

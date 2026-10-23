@@ -7,6 +7,7 @@ import json
 import re
 
 from fabric.backend.model_lineage import _name, match_table
+from fabric.backend.notebook_parsing import parse_python
 
 
 _NAME = r"'(?:[^']|'')*'|[^\s=]+"
@@ -257,8 +258,13 @@ def _slice_artifact(artifact, targets, objects):
         for parent in by_id[pending.pop()]["dependencies"] - needed:
             needed.add(parent)
             pending.append(parent)
-    segments = [item["segment"] for item in objects if item["id"] in needed]
-    unique = {(part["file"], part["startLine"], part["source"]): part for part in segments}
+    segments = [{
+        **item["segment"], "objectType": item["objectType"], "objectName": item["objectName"],
+    } for item in objects if item["id"] in needed]
+    unique = {
+        (part["file"], part["objectType"], part["objectName"], part["startLine"], part["source"]): part
+        for part in segments
+    }
     return {
         **artifact, "changeIds": sorted({change_id for item in targets for change_id in item["changeIds"]}),
         "targets": [_public(item) for item in targets],
@@ -383,7 +389,7 @@ def target_catalog(scoped, catalog, changes):
                 definitions, dependencies = {}, []
                 for index, cell in enumerate(cells):
                     try:
-                        tree = ast.parse(cell["source"])
+                        tree = parse_python(cell["source"], next(iter(artifact["files"])))
                     except SyntaxError:
                         dependencies.append(set())
                         continue
@@ -404,7 +410,7 @@ def target_catalog(scoped, catalog, changes):
             for cell in cells:
                 direct = references_column(cell)
                 try:
-                    statements = ast.parse(cell["source"]).body
+                    statements = parse_python(cell["source"], next(iter(artifact["files"]))).body
                 except SyntaxError:
                     statements = None
                 if not direct and (cell["parameters"] or (

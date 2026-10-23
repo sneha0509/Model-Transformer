@@ -27,6 +27,7 @@ from fabric.backend.lineage import REPORTS_DIR, persist_mapping, scan_repository
 from fabric.backend.repositories import ensure_repository
 from fabric.backend.selection import normalize_repository
 from shared.backend.auth import get_fabric_access_token
+from shared.backend.copilot_auth import ensure_copilot_authenticated
 from shared.backend.routes import get_request_payload, require_api_login
 from fabric.backend.impact import build_catalog, live_schema, report_path, validate_changes
 from fabric.backend.copilot_impact import CopilotAuthenticationRequired, run_analysis
@@ -55,6 +56,16 @@ def _azure_devops_url(details):
     project = quote(str(details.get("projectName") or ""), safe="")
     repository = quote(str(details.get("repositoryName") or ""), safe="")
     return f"https://dev.azure.com/{organization}/{project}/_git/{repository}"
+
+
+@fabric_backend.post("/copilot-login")
+def copilot_login():
+    try:
+        status = ensure_copilot_authenticated()
+    except (OSError, RuntimeError) as exc:
+        current_app.logger.exception("Fabric Copilot browser sign-in failed")
+        return jsonify({"message": str(exc)}), 502
+    return jsonify({"authenticated": True, "login": status.login})
 
 
 @fabric_backend.get("/workspaces")
@@ -400,7 +411,11 @@ def analyze_fabric_impact(preset_id):
                 })
             report = run_analysis(preset_id, catalog, changes, progress)
             events.put({"state": "complete", "report": report})
-        except (CopilotAuthenticationRequired, OSError, RuntimeError, ValueError, TimeoutError) as exc:
+        except CopilotAuthenticationRequired as exc:
+            events.put({
+                "state": "error", "message": str(exc), "requiresCopilotLogin": True,
+            })
+        except (OSError, RuntimeError, ValueError, TimeoutError) as exc:
             app.logger.exception("Fabric impact analysis failed for %s", preset_id)
             events.put({
                 "state": "error", "message": f"Impact analysis failed: {exc}",

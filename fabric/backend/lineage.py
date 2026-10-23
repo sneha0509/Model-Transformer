@@ -10,13 +10,13 @@ from pathlib import Path
 import re
 import tempfile
 
-import sqlglot
 from sqlglot import exp
-from sqlglot.errors import OptimizeError, ParseError, UnsupportedError
+from sqlglot.errors import OptimizeError, ParseError, TokenError, UnsupportedError
 from sqlglot.optimizer.scope import traverse_scope
 
 from fabric.backend.filesystem import filesystem_path
 from fabric.backend.model_lineage import build_model_graph
+from fabric.backend.notebook_parsing import parse_python, parse_spark_sql, sql_placeholders
 from shared.paths import PROJECT_ROOT
 
 
@@ -86,8 +86,9 @@ def _inventory(root, issues):
             _issue(issues, relative, "Folder type conflicts with .platform metadata.")
             continue
         content_name = "pipeline-content.json" if kind == "DataPipeline" else "notebook-content.py"
-        if kind == "Notebook" and content_name not in files and "notebook-content.ipynb" in files:
-            content_name = "notebook-content.ipynb"
+        if kind == "Notebook" and content_name not in files:
+            content_name = next((name for name in ("notebook-content.ipynb", "notebook-content.scala")
+                                 if name in files), content_name)
         logical_id = config.get("logicalId", "")
         if not isinstance(logical_id, str):
             _issue(issues, relative, ".platform logicalId must be a string.")
@@ -187,19 +188,20 @@ def _notebook_source(path):
         binding = _object(dependencies.get("lakehouse", {}), "Notebook lakehouse binding")
         return source, binding, parameter_lines
     source = path.read_text(encoding="utf-8-sig")
+    comment = "//" if path.suffix == ".scala" else "#"
     metadata_lines = []
     for line in source.splitlines():
-        if line.startswith("# META "):
-            metadata_lines.append(line[7:])
+        if line.startswith(f"{comment} META "):
+            metadata_lines.append(line[len(comment) + 6:])
         elif metadata_lines:
             break
     metadata = json.loads("\n".join(metadata_lines)) if metadata_lines else {}
     parameter_lines = set()
     parameter_cell = False
     for number, line in enumerate(source.splitlines(), 1):
-        if line.startswith("# PARAMETERS CELL"):
+        if line.startswith(f"{comment} PARAMETERS CELL"):
             parameter_cell = True
-        elif line.startswith(("# CELL ", "# METADATA ")):
+        elif line.startswith((f"{comment} CELL ", f"{comment} METADATA ")):
             parameter_cell = False
         elif parameter_cell:
             parameter_lines.add(number)
@@ -256,27 +258,36 @@ class NotebookScanner:
         if not isinstance(query, str):
             self.issue("Cannot resolve spark.sql query.", line)
             return
-        placeholders = {}
-
-        def substitute(match):
-            key = f"__fabric_dynamic_{len(placeholders)}__"
-            placeholders[key] = match.group()
-            return key
-
-        prepared = re.sub(r"\{[^{}]*\}", substitute, query)
-        try:
-            statements = sqlglot.parse(prepared, read="spark")
-        except (ParseError, UnsupportedError) as exc:
-            self.issue(f"SQL parse error: {str(exc)[:400]}", line)
-            return
+        prepared, placeholders = sql_placeholders(query)
+        candidates = [prepared]
+        if placeholders:
+            self.issue(
+                "SQL query contains unresolved expressions; only static dependencies are analyzed: "
+                + ", ".join(dict.fromkeys(placeholders.values())), line,
+            )
+            keys = "|".join(re.escape(key) for key in placeholders)
+            # A standalone interpolated WHERE/JOIN clause is not a table identifier.
+            without_fragments = re.sub(
+                rf"(?m)^[ \t]*(?:{keys})[ \t]*(?=;?[ \t]*\r?$)", "", prepared,
+            )
+            if without_fragments != prepared:
+                candidates.append(without_fragments)
+        for index, candidate in enumerate(candidates):
+            try:
+                statements = parse_spark_sql(candidate)
+            except (ParseError, TokenError, UnsupportedError) as exc:
+                if index + 1 < len(candidates):
+                    continue
+                self.issue(f"SQL parse error: {str(exc)[:400]}", line)
+                return
+            if not any(isinstance(statement, exp.Command) for statement in statements) or index + 1 == len(candidates):
+                break
         for statement in statements:
             if statement is None:
                 continue
             if isinstance(statement, exp.Command):
                 self.issue(f"Unsupported SQL command: {statement.sql()[:120]}", line)
                 continue
-            if placeholders and not list(statement.find_all(exp.Table)):
-                self.issue("SQL query shape contains unresolved expressions.", line)
             target = statement.args.get("this")
             if isinstance(target, exp.Schema):
                 target = target.this
@@ -400,14 +411,70 @@ class NotebookScanner:
                 self.expression_calls(statement)
 
 
+def _scan_scala(source, scanner):
+    """Resolve literal Spark calls only; never infer Scala variable values."""
+    strings = {}
+    pieces = []
+    end = 0
+    for token in re.finditer(r'//[^\n]*|/\*[\s\S]*?\*/|"""[\s\S]*?"""|"(?:\\.|[^"\\])*"', source):
+        pieces.append(source[end:token.start()])
+        text = token.group()
+        is_string = text.startswith('"')
+        if is_string:
+            strings[token.start()] = (text, token.end())
+        masked = re.sub(r"[^\n]", " ", text)
+        pieces.append("@" + masked[1:] if is_string else masked)
+        end = token.end()
+    pieces.append(source[end:])
+    masked = "".join(pieces)
+    scanner.issue("Scala analysis resolves literal Spark table/SQL calls only; variable, interpolation and cross-cell dependencies are unresolved.", 1)
+    calls = re.finditer(
+        r"\b(?:spark\s*\.\s*(?:read\s*\.\s*)?(?P<read>table|sql)"
+        r"|(?P<write>saveAsTable|insertInto)"
+        r"|(?:notebookutils|mssparkutils)\s*\.\s*notebook\s*\.\s*(?P<call>run))\s*\(\s*",
+        masked,
+    )
+    for call in calls:
+        line = source.count("\n", 0, call.start()) + 1
+        literal = strings.get(call.end())
+        method = call["read"] or call["write"] or call["call"]
+        if literal is None or not masked[literal[1]:].lstrip().startswith((")", ",")):
+            scanner.issue(f"Cannot resolve Scala {method} argument without a complete literal.", line)
+            continue
+        text, _ = literal
+        try:
+            value = text[3:-3] if text.startswith('"""') else json.loads(text)
+        except ValueError:
+            scanner.issue(f"Unsupported Scala string escape in {method}.", line)
+            continue
+        if call["call"]:
+            scanner.calls.append({"reference": value, "line": line})
+        elif method == "sql":
+            scanner.sql(value, line)
+        else:
+            scanner.table(value, "write" if call["write"] else "read", line, method)
+
+
 def _scan_notebook(root, item, parameters, issues):
     try:
         source, binding, parameter_lines = _notebook_source(root / item["file"])
-        tree = ast.parse(source)
     except (OSError, ValueError, SyntaxError) as exc:
         _issue(issues, item["file"], f"Could not parse notebook: {exc}", getattr(exc, "lineno", None))
         return {"reads": [], "writes": [], "calls": [], "parameters": parameters, "defaultLakehouse": {}}
     scanner = NotebookScanner(item, issues, parameters, binding)
+    if Path(item["file"]).suffix == ".scala":
+        _scan_scala(source, scanner)
+        references = sorted(scanner.tables.values(), key=lambda table: (table["tableKey"], table["operation"]))
+        return {
+            "reads": [table for table in references if table["operation"] == "read"],
+            "writes": [table for table in references if table["operation"] == "write"],
+            "calls": scanner.calls, "parameters": parameters, "defaultLakehouse": binding,
+        }
+    try:
+        tree = parse_python(source, item["file"], issues)
+    except SyntaxError as exc:
+        _issue(issues, item["file"], f"Could not parse notebook: {exc}", exc.lineno)
+        return {"reads": [], "writes": [], "calls": [], "parameters": parameters, "defaultLakehouse": binding}
     for number, line in enumerate(source.splitlines(), 1):
         if line.lstrip().startswith("# MAGIC "):
             _issue(issues, item["file"], "Notebook magic is not Python; dependencies require language-specific analysis.", number)

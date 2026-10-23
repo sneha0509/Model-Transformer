@@ -11,6 +11,7 @@ from pathlib import Path
 from copilot import CopilotClient
 from copilot.session_events import AssistantMessageData
 from dotenv import load_dotenv
+from shared.copilot_runtime import configure_copilot_runtime
 from shared.paths import PROJECT_ROOT
 
 
@@ -302,6 +303,7 @@ def main():
     args = parser.parse_args()
 
     load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
+    configure_copilot_runtime()
     _, output_path = generate_table_precedence(args.metadata_path)
     print(output_path)
 

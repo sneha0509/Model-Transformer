@@ -5,6 +5,7 @@ import json
 import re
 
 from fabric.backend.model_lineage import match_table
+from fabric.backend.notebook_parsing import parse_python
 
 
 def notebook_cells(path, source):
@@ -25,8 +26,8 @@ def notebook_cells(path, source):
     lines = source.splitlines()
     markers = [
         index for index, line in enumerate(lines)
-        if re.match(r"^# (?:CELL|PARAMETERS CELL|MARKDOWN CELL)\s+\*+", line)
-        or line.startswith("# %%")
+        if re.match(r"^(?:#|//) (?:CELL|PARAMETERS CELL|MARKDOWN CELL)\s+\*+", line)
+        or line.startswith(("# %%", "// %%"))
     ]
     if not markers:
         return [{"cell": 1, "startLine": 1, "source": source, "parameters": False}]
@@ -36,7 +37,7 @@ def notebook_cells(path, source):
         if "MARKDOWN" in lines[start] or "[markdown]" in lines[start]:
             continue
         for index in range(start + 1, end):
-            if lines[index].startswith("# METADATA "):
+            if lines[index].startswith(("# METADATA ", "// METADATA ")):
                 end = index
                 break
         cells.append({
@@ -59,7 +60,7 @@ def _select_cells(artifact, evidence_lines):
     uncertain = False
     for index, cell in enumerate(cells):
         try:
-            tree = ast.parse(cell["source"])
+            tree = parse_python(cell["source"], next(iter(artifact["files"])))
         except SyntaxError:
             # SQL/magics and cross-cell syntax cannot be safely sliced as Python.
             uncertain = True

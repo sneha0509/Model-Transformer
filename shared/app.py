@@ -4,6 +4,7 @@ import secrets
 from dotenv import load_dotenv
 from flask import Flask
 
+from shared.copilot_runtime import configure_copilot_runtime
 from shared.paths import PROJECT_ROOT
 
 
@@ -12,6 +13,7 @@ _SESSION_SECRET = secrets.token_hex(32)
 
 def create_app(config=None):
     load_dotenv(PROJECT_ROOT / ".env", override=False)
+    configure_copilot_runtime()
     app = Flask(__name__, static_folder=None, template_folder=None)
     app.config.from_mapping(
         SECRET_KEY=os.getenv("FLASK_SECRET_KEY") or _SESSION_SECRET,

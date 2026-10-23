@@ -1,6 +1,7 @@
 """Review-only schema change analysis of a Fabric repository snapshot."""
 
 from datetime import datetime, timezone
+from difflib import unified_diff
 import base64
 import binascii
 import hashlib
@@ -15,11 +16,14 @@ from fabric.backend.filesystem import filesystem_path
 from fabric.backend.impact_context import notebook_cells
 from fabric.backend.lineage import EXCLUDED_DIRECTORIES, _notebook_source, scan_repository
 from fabric.backend.model_lineage import _blocks, _property, read_model
+from fabric.backend.notebook_parsing import parse_python
 from shared.paths import PROJECT_ROOT
 
 
 REPORTS_DIR = PROJECT_ROOT / "output" / "fabric" / "impact"
 MAX_ARTIFACT_CHARACTERS = 100_000
+MAX_ACTION_ITEMS = 4
+MAX_ACTION_CHARACTERS = 240
 OBJECT_TYPES = {
     "notebook_code", "column", "measure", "relationship", "calculated_column",
     "calculated_table", "partition", "hierarchy", "role", "table", "expression",
@@ -29,9 +33,10 @@ LIMITATIONS = [
     "Review only: no notebook, repository file, source schema or live Fabric item is changed.",
     "The selected model schema comes from Fabric; notebook and other model coverage is limited to the local repository snapshot.",
     "AI findings and suggested replacements require human review and runtime/model validation.",
+    "AI citations are not source-verified in v1: file names, line ranges and excerpts may be inaccurate and require manual review.",
     "Static table lineage is not proof of column-level flow; dynamic references and scope ambiguity remain gaps.",
     "Notebook requests contain lineage-relevant code cells and their static dependencies, not whole notebook exports. Unresolved dependencies are explicit gaps.",
-    "Notebook evidence retains original cell numbers and exported-code line numbers; outputs, markdown and export metadata are not sent.",
+    "Notebook requests retain original cell numbers and exported-code line numbers; outputs, markdown and export metadata are not sent.",
     "Model dependencies are static references, not proof that every dependent object needs an edit. DAX context, dynamic expressions and runtime schemas require validation.",
     "Pipeline invocation and literal table metadata identify review candidates; indirect dataset references and dynamic pipeline expressions may require manual tracing.",
 ]
@@ -50,9 +55,108 @@ def _read(root, file):
 
 
 def _code_text(value, label, allow_empty=False):
-    if not isinstance(value, str) or len(value) > 20000 or (not allow_empty and not value.strip()):
-        raise ValueError(f"{label} must be source text of at most 20000 characters.")
+    if not isinstance(value, str) or len(value) > MAX_ARTIFACT_CHARACTERS or (not allow_empty and not value.strip()):
+        raise ValueError(f"{label} must be source text of at most {MAX_ARTIFACT_CHARACTERS} characters.")
     return value
+
+
+def _action_items(value, label):
+    if not isinstance(value, list) or not 1 <= len(value) <= MAX_ACTION_ITEMS:
+        raise ValueError(f"{label} must contain 1 to {MAX_ACTION_ITEMS} short action items, not a paragraph.")
+    for item in value:
+        text = _text(item, f"{label} item", MAX_ACTION_CHARACTERS)
+        if len(text.splitlines()) != 1:
+            raise ValueError(f"{label} items must be single-line text, not paragraphs.")
+
+
+def replacement_sources(artifact):
+    """Bind generated replacements to exact, content-addressed source entities."""
+    if artifact["type"] == "Notebook":
+        parts = [{
+            **cell, "file": next(iter(artifact["files"])),
+            "objectType": "notebook_code", "objectName": f"Cell {cell['cell']}",
+        } for cell in artifact.get("cells", [])]
+    else:
+        parts = artifact.get("sourceSegments", [])
+    targets = {(target["objectType"], target["objectName"]) for target in artifact.get("targets", [])}
+    sources = []
+    for part in parts:
+        identity = (part.get("objectType"), part.get("objectName"))
+        fingerprint = json.dumps([
+            artifact["key"], part["file"], *identity, part["startLine"], part["source"],
+        ], ensure_ascii=True)
+        sources.append({
+            **part, "sourceId": hashlib.sha256(fingerprint.encode()).hexdigest()[:24],
+            "editable": identity in targets,
+        })
+    return sources
+
+
+def _entity_fixes(impact, artifact):
+    """Expand and merge source-checked edits within their exact target entity."""
+    if artifact["type"] == "Notebook" and "targets" in artifact:
+        target = next(item for item in artifact["targets"] if (
+            item["objectType"] == impact["objectType"] and item["objectName"] == impact["objectName"]
+        ))
+        segments = [{
+            **cell, "file": next(iter(artifact["files"])),
+        } for cell in artifact["cells"] if (
+            cell["cell"] == target.get("cell") or target["objectName"] == f"Cell {cell['cell']}"
+        )]
+    elif any("objectName" in part for part in artifact.get("sourceSegments", [])):
+        segments = [part for part in artifact["sourceSegments"] if (
+            part["objectType"] == impact["objectType"] and part["objectName"] == impact["objectName"]
+        )]
+    else:
+        return impact["proposedFixes"]
+    grouped = {}
+    for fix in impact["proposedFixes"]:
+        matches = [index for index, part in enumerate(segments)
+                   if part["file"] == fix["file"] and fix["before"] in part["source"]]
+        if len(matches) != 1 or segments[matches[0]]["source"].count(fix["before"]) != 1:
+            raise ValueError("Proposed code must uniquely match the affected target entity, not another object or prerequisite.")
+        grouped.setdefault(matches[0], []).append(fix)
+    replacements = []
+    for index, fixes in grouped.items():
+        part = segments[index]
+        before = part["source"]
+        edits = sorted(((before.index(fix["before"]), fix) for fix in fixes), key=lambda edit: edit[0])
+        previous_end = 0
+        pieces = []
+        for start, fix in edits:
+            if start < previous_end:
+                raise ValueError("Proposed fixes overlap within the affected entity; return one combined replacement.")
+            pieces.extend((before[previous_end:start], fix["after"]))
+            previous_end = start + len(fix["before"])
+        after = "".join([*pieces, before[previous_end:]])
+        _code_text(after, "Proposed entity code", allow_empty=True)
+        if after == before:
+            raise ValueError("Proposed entity code must differ from the original source.")
+        if after and Path(part["file"]).suffix.casefold() in {".bim", ".json"}:
+            try:
+                proposed = json.loads(after)
+            except ValueError as exc:
+                raise ValueError("Proposed entity code must be valid JSON.") from exc
+            if type(proposed) is not type(json.loads(before)):
+                raise ValueError("Proposed entity code must preserve the JSON entity type.")
+        elif after and Path(part["file"]).suffix.casefold() in {".py", ".ipynb"}:
+            try:
+                parse_python(before, part["file"])
+            except SyntaxError:
+                # Magic and non-Python cells need their own language parser.
+                pass
+            else:
+                try:
+                    parse_python(after, part["file"])
+                except SyntaxError as exc:
+                    raise ValueError(f"Proposed entity code must be valid Python: {exc.msg}.") from exc
+        replacement = {
+            **fixes[0], "before": before, "after": after, "line": part["startLine"],
+        }
+        if "cell" in part:
+            replacement["cells"] = [part["cell"]]
+        replacements.append(replacement)
+    return replacements
 
 
 def _schema(root, model, files, issues):
@@ -295,20 +399,28 @@ def validate_changes(payload, catalog):
 
 
 def validate_result(result, changes, artifacts):
-    """Reject invented citations and replacements before persisting AI output."""
+    """Validate response structure, target scope and proposed replacements."""
     if not isinstance(result, dict):
         raise ValueError("Copilot must return a JSON object.")
     summary = _text(result.get("summary"), "AI summary", 8000)
     gaps = result.get("gaps")
     impacts = result.get("impacts")
+    unaffected = result.get("unaffectedTargets", [])
     if not isinstance(gaps, list) or not isinstance(impacts, list) or len(impacts) > 500:
         raise ValueError("Copilot must return impacts and gaps arrays (at most 500 impacts).")
+    if not isinstance(unaffected, list) or len(unaffected) > 500:
+        raise ValueError("Copilot must return an unaffectedTargets array (at most 500 targets).")
     gaps = [_text(gap, "AI analysis gap", 4000) for gap in gaps]
     allowed = {artifact["key"]: artifact for artifact in artifacts}
+    sources = {
+        artifact["key"]: {source["sourceId"]: source for source in replacement_sources(artifact)}
+        for artifact in artifacts
+    }
     change_ids = {change["id"] for change in changes}
-    for impact in impacts:
+    assessed = {}
+    for is_impact, impact in [(True, item) for item in impacts] + [(False, item) for item in unaffected]:
         if not isinstance(impact, dict):
-            raise ValueError("Each AI impact must be an object.")
+            raise ValueError("Each AI target assessment must be an object.")
         artifact_key = impact.get("artifactKey")
         artifact = allowed.get(artifact_key) if isinstance(artifact_key, str) else None
         ids = impact.get("changeIds")
@@ -318,12 +430,18 @@ def validate_result(result, changes, artifacts):
             raise ValueError("Copilot referenced an unknown artifact or column change.")
         if not isinstance(impact.get("objectType"), str) or impact["objectType"] not in OBJECT_TYPES:
             raise ValueError("Copilot returned an unsupported model object type.")
-        if impact.get("severity") not in ("high", "medium", "low") or impact.get("confidence") not in (
-            "high", "medium", "low",
-        ):
-            raise ValueError("Copilot returned an invalid severity or confidence.")
-        for field in ("objectName", "impact", "recommendation"):
-            _text(impact.get(field), f"AI {field}", 8000)
+        _text(impact.get("objectName"), "AI objectName", 8000)
+        if is_impact:
+            if impact.get("severity") not in ("high", "medium", "low") or impact.get("confidence") not in (
+                "high", "medium", "low",
+            ):
+                raise ValueError("Copilot returned an invalid severity or confidence.")
+            _action_items(impact.get("impact"), "AI impact")
+            _action_items(impact.get("recommendation"), "AI recommendation")
+        else:
+            _text(impact.get("reason"), "No-impact reason", 1000)
+            if any(field in impact for field in ("impact", "recommendation", "proposedFixes")):
+                raise ValueError("Unaffected targets must not contain impacts or fixes.")
         if "targets" in artifact and not any(
             impact["objectType"] == target["objectType"]
             and impact["objectName"] == target["objectName"]
@@ -331,51 +449,68 @@ def validate_result(result, changes, artifacts):
             for target in artifact["targets"]
         ):
             raise ValueError("Copilot referenced an object outside the code-identified targets.")
+        identity = (artifact_key, impact["objectType"], impact["objectName"])
+        statuses = assessed.setdefault(identity, {True: set(), False: set()})
+        if statuses[not is_impact].intersection(ids):
+            raise ValueError("Copilot marked the same target and change as both impacted and unaffected.")
+        statuses[is_impact].update(ids)
         evidence = impact.get("evidence")
         if not isinstance(evidence, list) or not evidence:
-            raise ValueError("Every AI impact must cite source evidence.")
+            raise ValueError("Every AI target assessment must cite source evidence.")
         for citation in evidence:
             if not isinstance(citation, dict):
                 raise ValueError("AI evidence must be an object.")
             file, line = citation.get("file"), citation.get("line")
-            code = artifact["files"].get(file) if isinstance(file, str) else None
-            if code is None or type(line) is not int or not 1 <= line <= len(code.splitlines()):
-                raise ValueError("Copilot cited a file or line outside the supplied artifact.")
+            _text(file, "Evidence file")
+            if type(line) is not int or line < 1:
+                raise ValueError("Evidence line must be a positive integer.")
             excerpt = _code_text(citation.get("excerpt"), "Evidence excerpt")
             end_line = line + len(excerpt.splitlines()) - 1
-            ranges = artifact.get("sourceRanges", {}).get(file)
-            if ranges is not None and not any(start <= line <= end_line <= end for start, end in ranges):
-                raise ValueError("Copilot cited source ranges that were not supplied.")
-            if "sourceSegments" in artifact and not any(
-                part["file"] == file and part["startLine"] <= line <= end_line <= part["endLine"]
-                and excerpt in "\n".join(part["source"].splitlines()[
-                    line - part["startLine"]:end_line - part["startLine"] + 1
-                ]) for part in artifact["sourceSegments"]
-            ):
-                raise ValueError("Copilot cited object source that was not supplied.")
-            if excerpt not in "\n".join(code.splitlines()[line - 1:line - 1 + len(excerpt.splitlines())]):
-                raise ValueError("Copilot evidence does not match the cited source lines.")
             for cell in artifact.get("cells", []):
-                if cell["startLine"] <= line <= end_line < cell["startLine"] + len(cell["source"].splitlines()):
+                if file in artifact["files"] and (
+                    cell["startLine"] <= line <= end_line < cell["startLine"] + len(cell["source"].splitlines())
+                ):
                     citation["cell"] = cell["cell"]
                     citation["cellLine"] = line - cell["startLine"] + 1
                     break
+        if not is_impact:
+            continue
         fixes = impact.get("proposedFixes")
         steps = impact.get("validationSteps")
-        if not isinstance(fixes, list) or not isinstance(steps, list) or not steps:
-            raise ValueError("Every AI impact must include proposedFixes and validationSteps arrays.")
+        if not isinstance(fixes, list) or not fixes:
+            raise ValueError("Every AI impact must include non-empty proposedFixes with actual before/after code, not manual validation.")
+        if not isinstance(steps, list):
+            raise ValueError("Every AI impact must include a validationSteps array.")
         for step in steps:
             _text(step, "Validation step", 4000)
         for fix in fixes:
             if not isinstance(fix, dict):
                 raise ValueError("Each proposed fix must be an object.")
+            if "sourceId" in fix:
+                source_id = _text(fix["sourceId"], "Fix sourceId", 100)
+                source = sources[artifact_key].get(source_id)
+                if source is None:
+                    raise ValueError(f"Copilot referenced an unknown sourceId for {impact['objectName']}.")
+                if not source["editable"] or (
+                    source.get("objectType"), source.get("objectName")
+                ) != (impact["objectType"], impact["objectName"]):
+                    raise ValueError("The replacement sourceId must identify the named target, not another object or prerequisite.")
+                if "file" in fix and fix["file"] != source["file"]:
+                    raise ValueError("Copilot supplied a conflicting source file for the replacement sourceId.")
+                if "before" in fix and fix["before"] != source["source"]:
+                    raise ValueError("Copilot supplied conflicting original source for the replacement sourceId.")
+                fix.pop("sourceId")
+                fix.update(file=source["file"], before=source["source"])
             file = fix.get("file")
             code = artifact["files"].get(file) if isinstance(file, str) else None
             before = _code_text(fix.get("before"), "Original code")
             after = _code_text(fix.get("after"), "Proposed code", allow_empty=True)
-            _text(fix.get("rationale"), "Fix rationale", 8000)
+            _action_items([fix.get("rationale")], "Fix rationale")
             if code is None or before not in code or before == after:
-                raise ValueError("Copilot proposed a replacement that does not match the supplied source.")
+                raise ValueError(
+                    "Copilot proposed a replacement that does not match the supplied source "
+                    f"for {impact['objectName']} in {file!r}. Use the target's sourceId and return changed after code."
+                )
             if "sourceSegments" in artifact and not any(
                 part["file"] == file and before in part["source"] for part in artifact["sourceSegments"]
             ):
@@ -385,16 +520,31 @@ def validate_result(result, changes, artifacts):
                 if not matches:
                     raise ValueError("Copilot proposed a replacement outside supplied notebook cells.")
                 fix["cells"] = [cell["cell"] for cell in matches]
+        impact["proposedFixes"] = _entity_fixes(impact, artifact)
+        for fix in impact["proposedFixes"]:
+            file, before, after = fix["file"], fix["before"], fix["after"]
+            path = file.replace("\\", "/")
+            fix["diff"] = "".join(
+                line if line.endswith("\n") else f"{line}\n\\ No newline at end of file\n"
+                for line in unified_diff(
+                    before.splitlines(keepends=True), after.splitlines(keepends=True),
+                    fromfile=f"a/{path}", tofile=f"b/{path}",
+                )
+            )
     for artifact in artifacts:
-        missing = [target["objectName"] for target in artifact.get("targets", []) if not any(
-            impact["artifactKey"] == artifact["key"] and impact["objectName"] == target["objectName"]
-            and impact["objectType"] == target["objectType"] for impact in impacts
-        )]
+        missing = []
+        for target in artifact.get("targets", []):
+            statuses = assessed.get(
+                (artifact["key"], target["objectType"], target["objectName"]),
+                {True: set(), False: set()},
+            )
+            if not set(target["changeIds"]) <= statuses[True] | statuses[False]:
+                missing.append(target["objectName"])
         if missing:
-            message = f"AI did not explain {len(missing)} code-identified targets in {artifact['key']}: {', '.join(missing)[:2000]}. Review the static targets manually."
+            message = f"AI did not resolve {len(missing)} code-identified targets in {artifact['key']}: {', '.join(missing)[:2000]}. No code was generated for these targets."
             if message not in gaps:
                 gaps.append(message)
-    return {"summary": summary, "impacts": impacts, "gaps": gaps}
+    return {"summary": summary, "impacts": impacts, "unaffectedTargets": unaffected, "gaps": gaps}
 
 
 def save_report(preset_id, catalog, changes, results, skipped):
@@ -407,13 +557,14 @@ def save_report(preset_id, catalog, changes, results, skipped):
     ] + skipped
     analyzed = {key for result in results for key in result["analyzedArtifacts"]}
     report = {
-        "schemaVersion": 3, "reportId": report_id, "presetId": preset_id,
+        "schemaVersion": 4, "reportId": report_id, "presetId": preset_id,
         "generatedAt": datetime.now(timezone.utc).isoformat(), "revision": catalog["revision"],
         "selection": catalog["selection"],
         "instructions": catalog.get("instructions", ""),
         "schemaRevision": catalog.get("schemaRevision"),
         "mode": "recommendations_only", "coverage": "partial" if gaps else "lineage_scope_analyzed",
         "changes": changes, "impacts": impacts, "gaps": gaps, "limitations": LIMITATIONS,
+        "unaffectedTargets": [target for result in results for target in result.get("unaffectedTargets", [])],
         "summaries": [result["summary"] for result in results],
         "impactLineage": catalog.get("impactLineage", {"nodes": [], "edges": []}),
         "targets": catalog.get("targets", []),

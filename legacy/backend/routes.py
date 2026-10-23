@@ -15,7 +15,7 @@ from legacy.backend.ai_batch_creation import (
 from legacy.backend.ai_powered_refresh import get_ai_refresh_metadata
 from legacy.backend.ai_table_precedence import generate_table_precedence
 from legacy.backend.batch_processing import batch_refresh_manager
-from legacy.backend.copilot_auth import ensure_copilot_authenticated
+from shared.backend.copilot_auth import ensure_copilot_authenticated
 from legacy.backend.orchestrator import get_advanced_table_details, get_asset_details, get_workspaces, get_workspace_assets
 from legacy.backend.presets import (
     delete_preset as delete_saved_preset,
@@ -298,4 +298,3 @@ def ai_batch_creation():
         **batches,
         "outputFile": output_path.name,
     })
-

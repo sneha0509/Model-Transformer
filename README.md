@@ -155,6 +155,15 @@ the activity JSON pointer, parameters, workspace reference, and dependencies.
 The page includes pipeline mappings, a complete notebook inventory, reverse
 table producer/consumer mappings, and explicit analysis gaps.
 
+Python source warnings (including invalid string escapes such as `"\."` and
+`"\$"`) are recorded once per notebook location in the analysis issues instead
+of repeated `<unknown>` console warnings. The downloaded code is not rewritten.
+Nested dynamic SQL expressions are kept as unresolved references. If a standalone
+interpolated SQL clause prevents parsing, the analyzer retries the static
+statement without that clause and records an explicit coverage gap; it does not
+infer dependencies inside the missing clause. Unsupported SQL commands and
+malformed SQL remain source-located gaps rather than repeated parser log messages.
+
 Literal pipeline parameter overrides apply only to tagged parameter cells.
 Notebook-default and pipeline-invocation contexts are reported separately.
 Unqualified table identity includes its exported default lakehouse binding;
@@ -217,8 +226,21 @@ lineage** action before analysis when newer branch content is needed; impact
 analysis never fetches or pulls automatically.
 
 The backend uses the official `github-copilot-sdk` with the desktop's signed-in
-GitHub Copilot identity. Run `copilot login` on the desktop and complete sign-in
-before analyzing. Microsoft sign-in and GitHub Copilot sign-in are separate.
+GitHub Copilot identity. If sign-in is required, impact analysis displays a
+**Sign in to GitHub Copilot** popup. Choose **Sign in with GitHub** to open the
+browser authorization flow on the computer running the backend. After successful
+authorization, analysis retries automatically with the selected columns and
+instructions preserved. Cancel before starting sign-in to leave the inputs
+unchanged, or retry from the popup if authorization fails. Browser authorization
+waits up to five minutes. Install the `copilot` CLI on that desktop for this login
+flow; the SDK-managed inference runtime is not an interactive login CLI.
+The app checks that the installed CLI supports `copilot login --web-flow` and
+explicitly requires that flow, with no device-code fallback. If unsupported,
+update the CLI and retry. GitHub redirects authorization to the CLI's local
+loopback callback; the CLI stores the credentials and the SDK reuses them.
+No device pairing code needs to be copied or entered. GitHub can still require
+the account's normal two-factor authentication.
+Microsoft sign-in and GitHub Copilot sign-in are separate.
 The existing SDK dependency is sufficient; no API key or raw Copilot token is
 accepted by this workflow. Optionally set `FABRIC_IMPACT_MODEL` to an available
 Copilot model ID. When unset (or set to `auto`), the application selects an
@@ -232,6 +254,17 @@ the error lists eligible IDs. No context window is guessed, and every session is
 checked to confirm the selected model before inference. If no model fits, the
 artifact is skipped with the existing exact context-budget gap. This desktop workflow
 does not require a separate approval checkbox before analysis.
+
+The web application and standalone AI scripts automatically keep the SDK-managed
+runtime in `.session/copilot-runtime/<installed-sdk-version>/`, relative to the
+project root rather than the current working directory. No machine-specific
+path, runtime version, or `.env` setting is required. Startup sets
+`COPILOT_CLI_EXTRACT_DIR` to this location, replacing any existing value. The
+gitignored cache is provisioned on first use and reused across analyses; upgrading
+the SDK selects a separate cache automatically. This changes only the managed
+runtime cache, not Copilot authentication storage or session working directories.
+Do not delete the cache while a runtime is using it. Concurrent first-use
+provisioning and endpoint-protection restrictions can still require attention.
 
 Before inference, analysis maps the selected columns' physical source tables and
 backtracks notebook producers and their upstream inputs, with cycle protection.
@@ -267,48 +300,109 @@ the AI targeting pass sends only evidenced cells and resolvable prerequisites.
 Omitted dynamic dependencies are explicit manual-review gaps, not a reason to
 send the entire notebook. Imports and parameter prerequisites remain context
 rather than being presented as affected code by default. Markdown, outputs and
-Fabric export metadata are excluded. Evidence retains original notebook cell
-numbers and exported-code lines; fixes are validated against supplied cells only.
+Fabric export metadata are excluded. Requests retain original notebook cell
+numbers and exported-code lines; AI citation locations are unverified in v1.
+Fixes are still validated against supplied cells only.
 The report shows selected cells and per-request context budgets.
 
 AI runs **automatically only for code-identified targets**, one scoped request
 per affected artifact, with relevant selected columns and shared instructions.
 Model and pipeline requests contain exact source fragments for selected objects
 and their prerequisites, never entire definitions (even for compact single-line
-JSON). Original source coordinates are retained. Copilot explains **what the
-impact is** and **what changes are required**, including validation-only cases;
-it cannot expand the target set. Missing target explanations are coverage gaps.
-Findings include severity, confidence,
-source file/line evidence, recommended cascade steps, proposed before/after
-snippets where safe, and specific validation checks. A physical rename does
+JSON). Original source coordinates are retained. Copilot generates **actual
+replacement code** for each affected target; it cannot expand the target set.
+Each editable source entity has a content-addressed `sourceId`; context-only
+prerequisites are marked non-editable. Copilot returns that ID and the complete
+AI-generated `after` code, not a retyped original. The backend supplies the exact
+`file` and `before` text, verifies the ID belongs to the named target, and
+validates source scope and replacement syntax before generating the diff.
+Raw source, whitespace and final newlines are preserved in the request instead
+of a line-numbered rendering. Original `startLine` coordinates remain available
+for citations. Saved reports and caches retain the existing complete
+`before`/`after` format and are revalidated against the supplied source.
+Prose-only or manual-validation findings are
+rejected and retried through the correction attempt, never saved as successful
+actions. A second invalid response is an explicit analysis error. For a numeric
+column becoming text, the AI is instructed to generate appropriate conversions
+and aggregation rewrites, rather than telling the user to implement a conversion.
+Missing business rules, unknown replacements or unresolved behavior remain
+explicit code-generation gaps; no alternate columns or business rules are invented.
+Targets with no code change needed are
+recorded separately as `unaffectedTargets`, with reasons and evidence, for
+coverage and cache validation; they are not displayed as impact findings.
+Unresolved targets remain explicit coverage gaps rather than no-impact claims.
+Short impact/recommendation metadata remains in the report JSON for compatibility
+but is not rendered as prose or manual checklists in action cards.
+The backend extracts the complete affected BIM/JSON object, TMDL declaration or
+notebook code cell and merges source-checked edits into its before/after versions.
+Edits to another target or a prerequisite cannot substitute for fixing the named
+entity. Ambiguous matches and overlapping replacements are rejected.
+JSON replacements must parse and preserve the entity's JSON type. Python
+replacement syntax is checked when the original cell parses as Python; this
+does not execute code or validate DAX, Scala, notebook magics or runtime behavior.
+The backend generates a unified `diff` for each source-validated replacement,
+including deletions and missing final newlines; it does not trust AI-generated
+patch text. These are **snippet diffs**: hunk coordinates are relative to the
+displayed snippet, not the full file, and are not apply-ready file patches.
+A physical rename does
 not necessarily require renaming the logical model column or rewriting DAX.
-Runtime validation and business decisions remain the user's responsibility.
+No proposed change is automatically applied.
 
-The desktop page keeps table selection and a single change description together.
-Results separate the code-identified targets/dependency connections from the two
-AI answers. Source details, coverage, instructions and request budgets are
-expandable instead of competing with the main workflow.
+Scala exports named `notebook-content.scala` are discovered alongside Python and
+IPYNB exports. Scala `// CELL`, parameter, markdown and metadata boundaries retain
+the original cell/line coordinates and exclude export metadata from code previews.
+Literal Spark table reads, `saveAsTable`/`insertInto` writes, SQL calls and notebook
+invocations supply candidate lineage. Scala variables, interpolated strings,
+runtime parameter values and cross-cell dependencies are not resolved and remain
+explicit coverage gaps, not inferred column flow.
+
+The desktop page keeps column selection and the change description side by side.
+Reports start with an overview of affected artifacts, findings, high-priority
+items, and selected columns. Findings are grouped by **Semantic model**,
+**Notebook**, or **Pipeline**, ordered by priority, and filterable by artifact
+type. Each action presents its entity/location and visible **Before**,
+**After (AI proposed)**, and a highlighted **Unified diff**. Impact paragraphs,
+prose recommendations, implementation notes and manual-validation checklists
+are not shown. Source references remain secondary, expandable evidence.
+Only artifacts with findings appear in the affected counts,
+cards and filters; static dependencies or analyzed status alone do not create
+an impact card. Older prose-only findings are shown as generation gaps with a
+rerun action, not as manual-validation cards or no-impact claims.
+Older reports without generated diffs still show their before/after code and
+prompt for a new analysis to generate the diff. Source references and
+dependency connections provide progressively more detail. Code generation gaps
+remain visible without exposing internal identifiers or request diagnostics.
+**Export PDF** opens the desktop print dialog; choose **Save as PDF** to save the
+formatted report. Exports include all artifact categories regardless of the active
+filter, with before/after entity code and diffs included, without impact prose
+or validation checklists. Raw source-reference details are omitted.
 
 Copilot tools, shell access, configuration discovery, skills, and file hooks are
 disabled; permission requests are denied. Notebook code is never executed.
 Every finding must reference a relevant selected change, a code-identified object
-and a supplied artifact. Source
-citations and original replacement snippets are checked against the actual
-supplied live-definition or selected cell text. Invalid AI output receives one explicit correction attempt in a fresh
+and a supplied artifact. AI citations are best-effort: their file names,
+line ranges and excerpts are not checked against the supplied source and do not
+block analysis when they are inaccurate. Source reference details ask users to
+confirm locations before applying a fix; saved report limitations retain the
+citation verification status. Basic citation field types are still checked so
+the report can be rendered. Original replacement snippets remain checked against
+the actual supplied live-definition or selected cell text.
+AI output that fails the remaining checks receives one explicit correction attempt in a fresh
 session, with the original scoped input and a new budget check, so invalid output
 and conversation history cannot accumulate past the context budget. Output is
 validated again; repeated invalid output, authentication failures, SDK errors,
 and timeouts are reported as failures, never as successful empty analysis.
 
-Progress is streamed while artifacts are analyzed. Validated reports are saved
-atomically under `output/fabric/impact/<preset-id>/<report-id>.json` and can be
-downloaded from the results pane. Reports retain source selection, snapshot
+Progress is streamed while artifacts are analyzed. Reports passing those checks are saved
+atomically under `output/fabric/impact/<preset-id>/<report-id>.json`; the existing
+report API retains access to the structured data. Reports retain source selection, snapshot
 fingerprint, live model revision, shared instructions, findings, proposed fixes,
 code-generated targets and impacted lineage, AI request/cache counts, artifact
-coverage, gaps, and limitations. Validated AI explanations are cached locally under
+coverage, gaps, and limitations. AI explanations are cached locally under
 `output/fabric/impact/<preset-id>/cache`. Repeated identical target source,
 instructions, change context, prompt/schema and concrete model reuse the cached
-result after source validation instead of sending another inference request.
+result after response-format, target-scope and proposed-replacement validation
+instead of sending another inference request. Cached citations are also unverified.
 Changes to those inputs invalidate reuse. Cache failures are logged and trigger
 fresh analysis. No Copilot connection is made when code finds no targets.
 The live definition is fetched again
@@ -338,6 +432,7 @@ Run the focused tests and Fabric regressions with:
 ```powershell
 python -m unittest fabric.tests.test_impact fabric.tests.test_fabric_schema fabric.tests.test_lineage fabric.tests.test_fabric
 node --check .\fabric\frontend\static\js\impact.js
+node --test .\fabric\tests\impact_login.test.cjs
 ```
 
 ## Hybrid model refresh
@@ -423,7 +518,7 @@ For command-line-only use, sign in through the Copilot CLI before running the
 script:
 
 ```powershell
-copilot login
+copilot login --web-flow
 ```
 
 The model defaults to `gpt-5`; setting `COPILOT_MODEL` in `.env` is optional:
@@ -432,9 +527,8 @@ The model defaults to `gpt-5`; setting `COPILOT_MODEL` in `.env` is optional:
 COPILOT_MODEL=gpt-5
 ```
 
-The SDK stages its managed runtime automatically on first use. It can also be
-downloaded in advance with `python -m copilot download-runtime`. Run the script
-against the newest metadata file:
+The SDK stages its managed runtime automatically on first use in the project-local
+cache described above. Run the script against the newest metadata file:
 
 ```powershell
 python -m legacy.backend.ai_table_precedence

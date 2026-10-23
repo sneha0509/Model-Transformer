@@ -229,3 +229,6 @@ presets/
 
 # Local Fabric repository snapshots
 /repo/
+
+# Project-local Copilot runtime cache
+/.session/
