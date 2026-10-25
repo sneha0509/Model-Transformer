@@ -200,12 +200,10 @@
     function showReport(report) {
         const changes = report.changes || [];
         const targets = report.targets || [];
-        const impacts = report.impacts.filter(impact => impact.proposedFixes?.length);
-        const gaps = [...report.gaps, ...report.impacts.filter(impact => !impact.proposedFixes?.length)
-            .map(impact => ({
-                file: impact.artifactKey,
-                message: `${impact.objectName}: this saved finding has no generated code. Run analysis again to generate a code change.`,
-            }))];
+        const impacts = report.impacts;
+        const gaps = report.gaps;
+        const codeActions = impacts.filter(impact => impact.proposedFixes?.length).length;
+        const withoutFixes = impacts.length - codeActions;
         const artifacts = new Map(report.inventory.map(item => [item.key, {
             ...item, impacts: [], targets: [],
         }]));
@@ -229,12 +227,13 @@
         results.hidden = false;
         document.getElementById("impactReportSummary").textContent = affected.length ?
             `${affected.length} affected ${affected.length === 1 ? "artifact" : "artifacts"}. ` +
-            `${impacts.length} AI-generated code ${impacts.length === 1 ? "action" : "actions"}.` :
-            gaps.length ? "No code changes generated. See code generation gaps below." :
+            `${impacts.length} impact ${impacts.length === 1 ? "finding" : "findings"}. ` +
+            `${codeActions} with generated code; ${withoutFixes} without automatic fixes.` :
+            gaps.length ? "Impact analysis is incomplete. See analysis gaps below." :
                 "No affected artifacts were identified for the selected columns.";
         const metrics = [
             [affected.length, "Affected artifacts"],
-            [impacts.length, "Code actions"],
+            [impacts.length, "Impact findings"],
             [impacts.filter(item => item.severity === "high").length, "High priority"],
             [changes.length, "Selected columns"],
         ];
@@ -276,7 +275,30 @@
                 const references = [...new Set(impact.evidence.map(sourceLocation))].filter(Boolean);
                 if (references.length) location.append(element("p", references.join(" / "), "impact-muted"));
                 finding.append(location);
-                impact.proposedFixes.forEach((fix, index) => {
+                const description = element("dl", undefined, "impact-finding-description");
+                [["Impact", impact.impact], ["Recommended action", impact.recommendation]].forEach(([label, items]) => {
+                    if (!items?.length) return;
+                    const field = element("div");
+                    const value = element("dd");
+                    if (Array.isArray(items)) {
+                        const list = element("ul", undefined, "impact-action-items");
+                        items.forEach(item => list.append(element("li", friendlyText(item))));
+                        value.append(list);
+                    } else {
+                        value.textContent = friendlyText(items);
+                    }
+                    field.append(element("dt", label), value);
+                    description.append(field);
+                });
+                finding.append(description);
+                if (!impact.proposedFixes?.length) {
+                    const blocked = element("section", undefined, "impact-code-fix");
+                    blocked.append(element("h5", "No automatic fix available"), element("p",
+                        friendlyText(impact.fixUnavailableReason ||
+                            "No automatic fix was saved for this finding. Rerun analysis to assess fix availability.")));
+                    finding.append(blocked);
+                }
+                (impact.proposedFixes || []).forEach((fix, index) => {
                     const edit = element("section", undefined, "impact-code-fix");
                     edit.append(element("h5", impact.proposedFixes.length > 1 ?
                         `AI code change ${index + 1}` : "AI code change"));
@@ -337,7 +359,7 @@
             return {card, type: artifact.type};
         });
         if (!affected.length) findings.append(element("p",
-            gaps.length ? "Code generation is incomplete for the targets listed below." :
+            gaps.length ? "Impact analysis is incomplete for the targets listed below." :
                 "No concrete impacts were identified in the supplied source.",
             "impact-empty-state"));
         const filters = document.getElementById("impactArtifactFilters");
@@ -368,7 +390,7 @@
         document.getElementById("impactReviewNotes").hidden = !gaps.length;
         const notice = document.getElementById("impactReviewNotice");
         notice.hidden = !gaps.length;
-        notice.textContent = `${gaps.length} code generation ${gaps.length === 1 ? "gap" : "gaps"}. See Code generation gaps below.`;
+        notice.textContent = `${gaps.length} analysis ${gaps.length === 1 ? "gap" : "gaps"}. See Analysis gaps below.`;
         const unaffected = (report.unaffectedTargets || []).filter(target => !report.impacts.some(impact =>
             impact.artifactKey === target.artifactKey && impact.objectType === target.objectType &&
             impact.objectName === target.objectName));

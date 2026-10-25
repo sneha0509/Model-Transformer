@@ -114,24 +114,35 @@ python -m unittest shared.tests.test_portal legacy.tests.test_legacy fabric.test
 
 Fabric presets start lineage at the **selected semantic model**, then follow its
 physical source tables to **producer notebooks** and the **pipelines** that run
-them. The graph reads TMDL or `model.bim`, including Direct Lake entity partitions,
+them. The default graph collapses the intermediate tables into
+**Semantic model → Notebooks → Pipelines**. Enable **Show source tables** above
+the graph to expand **Semantic model → Source tables → Notebooks → Pipelines**.
+This changes only the graph presentation; source-table cards and full JSON/CSV
+evidence remain unchanged. Shared notebook relationships are grouped by operation
+and verification status, so unverified paths stay dashed when tables are hidden.
+The Model table selector and Include reads control work in both views. Tables
+without a known producer are visible when source tables are expanded; hiding
+them does not invent a notebook connection.
+The graph reads TMDL or `model.bim`, including Direct Lake entity partitions,
 literal Power Query schema/item navigation, and literal SQL queries. Logical
 model table names and physical source names are kept separately. Calculated
-tables and unresolved sources remain visible without invented producers.
+tables and unresolved sources remain available in the expanded graph and source
+table cards without invented producers.
 Resolved notebook callers and parent pipelines are followed with cycle protection.
 Readers of a source table are not presented as its upstream producers.
 
 The preset graph supports node dragging, canvas panning, scroll/pinch zoom,
 zoom buttons, fit-to-view, layout reset, node search, and a model-table selector
 for focusing on one branch. Nodes and relationships are keyboard accessible;
-select either to inspect source evidence and pipeline invocation parameters.
+select either to highlight its connected flow. Source evidence and pipeline
+invocation parameters remain available in the JSON/CSV downloads.
 Confirmed source identities use solid relationships. Table-name matches whose
 schema, workspace or lakehouse identity cannot be proved (for example, a OneLake GUID
 versus a notebook's explicit lakehouse name) are **dashed, unverified candidates**,
 not confirmed lineage. Conflicting known scopes are excluded. Multiple possible
 producers are retained rather than arbitrarily selecting one. Missing producers,
-unsupported partition expressions, and uncertain scopes are listed as analysis
-gaps. This remains static notebook-level lineage, not proof of runtime execution
+unsupported partition expressions, and uncertain scopes are recorded as analysis
+gaps in the JSON mapping. This remains static notebook-level lineage, not proof of runtime execution
 or column-level flow.
 
 Older saved mappings rebuild automatically from the existing local snapshot on
@@ -152,8 +163,31 @@ Notebook code is never executed and no cloud artifacts are changed. CTEs and
 session temporary views are excluded from persisted tables. Each dependency
 includes the notebook source path, line, and operation; pipeline calls include
 the activity JSON pointer, parameters, workspace reference, and dependencies.
-The page includes pipeline mappings, a complete notebook inventory, reverse
-table producer/consumer mappings, and explicit analysis gaps.
+The page includes pipeline mappings and a complete notebook inventory. Analysis
+gaps remain in the JSON mapping, not in a page section or summary count.
+Separate **Pipelines** and **Notebooks** tabs appear in the
+left sidebar, each containing a flat list with no nested dropdowns. Select a
+pipeline to see its notebook calls on the right; select one of those notebooks
+to switch to the matching notebook in the **Notebooks** tab and show its
+**Read tables** and **Write tables**. Notebook identity, not its display name,
+determines the selected item. A search hiding the target notebook is cleared.
+Pipeline cards preserve the original name casing and show their notebook call
+count beneath the name. Notebook cards show their read and write table counts.
+The Notebooks tab opens a notebook's tables directly in the right-hand panel.
+Tables are not displayed in the artifact lists or selected automatically.
+Notebook tab selections use notebook defaults and include notebooks without a
+caller. Pipeline invocation overrides remain available in the mapping downloads.
+Unmatched notebook references remain in the pipeline details with an explicit
+message because there is no inventory notebook to select.
+Child-pipeline links open the referenced pipeline's details on the right. Search matches
+pipeline names, notebook names, and dependent tables, without revealing tables
+until a notebook is selected. Selecting the active notebook again clears its
+details. Switching tabs clears the selection. Tabs support arrow keys, Home, and
+End. On narrow screens, details appear below the artifact list.
+Source-table cards show only the model table name and its physical source tables.
+The artifact browser shows names and read/write relationships without resolution
+badges, IDs, source paths, or execution metadata. Reverse table producer/consumer
+mappings and full evidence remain available through the JSON/CSV downloads.
 
 Python source warnings (including invalid string escapes such as `"\."` and
 `"\$"`) are recorded once per notebook location in the analysis issues instead
@@ -281,7 +315,12 @@ contains selected columns, physical tables, artifacts, notebook cells, model
 objects and pipeline activities, with typed dependency edges and evidence levels.
 TMDL and TMSL (`model.bim`) indexing resolves source mappings, DAX references and
 transitive measure/calculated-table dependencies, relationship endpoints,
-sort-by columns, hierarchies, role filters and source expressions. A dependency
+active relationship filter paths to measures, explicit `USERELATIONSHIP` and
+`CROSSFILTER` references (including inactive relationships), sort-by columns,
+hierarchies, role filters and source expressions. Relationship candidates respect
+filter direction and retain both endpoint column definitions as context.
+Missing endpoints or unresolved relationship functions are explicit gaps.
+A dependency
 is a review candidate, not a claim that an edit is required. Pipeline activities
 that invoke affected notebooks/pipelines or contain literal physical-table
 metadata are targeted separately; unrelated activities are excluded. Referenced
@@ -305,12 +344,21 @@ numbers and exported-code lines; AI citation locations are unverified in v1.
 Fixes are still validated against supplied cells only.
 The report shows selected cells and per-request context budgets.
 
-AI runs **automatically only for code-identified targets**, one scoped request
-per affected artifact, with relevant selected columns and shared instructions.
+AI runs **automatically only for code-identified targets**, with relevant selected
+columns and shared instructions. Notebook and pipeline requests remain scoped
+per artifact. Semantic models use batches of at most eight editable targets;
+oversized batches are split further against source, request and advertised model
+context limits. Every batch retains its targets' complete transitive prerequisites
+as read-only context, original source coordinates and stable source IDs. A single
+target whose required context still exceeds a limit is explicitly skipped rather
+than truncated; other batches continue. Report inventory records each batch's
+targets, status, context budget and cache/inference source; a partly analyzed model
+is marked `partial`, not fully analyzed.
 Model and pipeline requests contain exact source fragments for selected objects
 and their prerequisites, never entire definitions (even for compact single-line
-JSON). Original source coordinates are retained. Copilot generates **actual
-replacement code** for each affected target; it cannot expand the target set.
+JSON). Original source coordinates are retained. Copilot determines the impact
+of each targeted change and generates **actual replacement code** when a safe fix
+can be derived; it cannot expand the target set.
 Each editable source entity has a content-addressed `sourceId`; context-only
 prerequisites are marked non-editable. Copilot returns that ID and the complete
 AI-generated `after` code, not a retyped original. The backend supplies the exact
@@ -320,19 +368,29 @@ Raw source, whitespace and final newlines are preserved in the request instead
 of a line-numbered rendering. Original `startLine` coordinates remain available
 for citations. Saved reports and caches retain the existing complete
 `before`/`after` format and are revalidated against the supplied source.
-Prose-only or manual-validation findings are
-rejected and retried through the correction attempt, never saved as successful
-actions. A second invalid response is an explicit analysis error. For a numeric
+Confirmed consequences are independent of fix availability. For example, removing
+a revenue column breaks a measure that sums it and any dependent margin measures,
+even if their own DAX text does not need a local edit. Those impacts remain in
+`impacts` with an empty `proposedFixes` array and a specific
+`fixUnavailableReason` identifying the missing replacement or business decision.
+At least one citation must match the named target's supplied source and original
+line; an unverifiable impact without a fix is rejected. Findings with generated
+fixes have a null `fixUnavailableReason`. Missing fix reasons or unverifiable
+citations on impacts without fixes are rejected and retried through the
+correction attempt. Copilot is instructed not to invent replacements or report
+generic validation-only findings. A second invalid response is an explicit
+analysis error. For a numeric
 column becoming text, the AI is instructed to generate appropriate conversions
 and aggregation rewrites, rather than telling the user to implement a conversion.
-Missing business rules, unknown replacements or unresolved behavior remain
-explicit code-generation gaps; no alternate columns or business rules are invented.
-Targets with no code change needed are
+Missing business rules or unknown replacements do not suppress an established
+impact; no alternate columns, zero/BLANK substitutions or measure-retirement
+rules are invented. Uncertain consequences and missing analysis coverage remain
+explicit analysis gaps. Targets with no concrete consequence are
 recorded separately as `unaffectedTargets`, with reasons and evidence, for
 coverage and cache validation; they are not displayed as impact findings.
 Unresolved targets remain explicit coverage gaps rather than no-impact claims.
-Short impact/recommendation metadata remains in the report JSON for compatibility
-but is not rendered as prose or manual checklists in action cards.
+Short impact and recommendation items are visible alongside proposed code or the
+decision needed for a safe fix; manual-validation checklists are not displayed.
 The backend extracts the complete affected BIM/JSON object, TMDL declaration or
 notebook code cell and merges source-checked edits into its before/after versions.
 Edits to another target or a prerequisite cannot substitute for fixing the named
@@ -360,33 +418,36 @@ The desktop page keeps column selection and the change description side by side.
 Reports start with an overview of affected artifacts, findings, high-priority
 items, and selected columns. Findings are grouped by **Semantic model**,
 **Notebook**, or **Pipeline**, ordered by priority, and filterable by artifact
-type. Each action presents its entity/location and visible **Before**,
-**After (AI proposed)**, and a highlighted **Unified diff**. Impact paragraphs,
-prose recommendations, implementation notes and manual-validation checklists
-are not shown. Source references remain secondary, expandable evidence.
+type. Each finding presents its entity/location, concrete impact and recommended
+action. When a fix is available it also shows **Before**, **After (AI proposed)**,
+and a highlighted **Unified diff**. Otherwise it shows **No automatic fix
+available** and the missing decision or information. Source references remain
+secondary, expandable evidence.
 Only artifacts with findings appear in the affected counts,
 cards and filters; static dependencies or analyzed status alone do not create
-an impact card. Older prose-only findings are shown as generation gaps with a
-rerun action, not as manual-validation cards or no-impact claims.
+an impact card. Confirmed impacts without fixes count as affected artifacts and
+findings, not as no-impact results or coverage gaps. Older findings without a fix
+reason remain visible with a prompt to rerun analysis to assess fix availability.
 Older reports without generated diffs still show their before/after code and
 prompt for a new analysis to generate the diff. Source references and
-dependency connections provide progressively more detail. Code generation gaps
+dependency connections provide progressively more detail. Analysis gaps
 remain visible without exposing internal identifiers or request diagnostics.
 **Export PDF** opens the desktop print dialog; choose **Save as PDF** to save the
 formatted report. Exports include all artifact categories regardless of the active
-filter, with before/after entity code and diffs included, without impact prose
-or validation checklists. Raw source-reference details are omitted.
+filter, including impact/recommendation items, unavailable-fix reasons and any
+before/after entity code and diffs, without validation checklists.
+Raw source-reference details are omitted.
 
 Copilot tools, shell access, configuration discovery, skills, and file hooks are
 disabled; permission requests are denied. Notebook code is never executed.
 Every finding must reference a relevant selected change, a code-identified object
-and a supplied artifact. AI citations are best-effort: their file names,
-line ranges and excerpts are not checked against the supplied source and do not
-block analysis when they are inaccurate. Source reference details ask users to
-confirm locations before applying a fix; saved report limitations retain the
-citation verification status. Basic citation field types are still checked so
-the report can be rendered. Original replacement snippets remain checked against
-the actual supplied live-definition or selected cell text.
+and a supplied artifact. Impacts without fixes must include a source-verified
+citation from their named target. Other AI citations remain best-effort: their
+file names, line ranges and excerpts require review. Source reference details
+ask users to confirm locations before applying a fix; saved report limitations
+retain the citation verification status. Basic citation field types are checked
+for every finding. Original replacement snippets remain checked against the
+actual supplied live-definition or selected cell text.
 AI output that fails the remaining checks receives one explicit correction attempt in a fresh
 session, with the original scoped input and a new budget check, so invalid output
 and conversation history cannot accumulate past the context budget. Output is
@@ -398,7 +459,9 @@ atomically under `output/fabric/impact/<preset-id>/<report-id>.json`; the existi
 report API retains access to the structured data. Reports retain source selection, snapshot
 fingerprint, live model revision, shared instructions, findings, proposed fixes,
 code-generated targets and impacted lineage, AI request/cache counts, artifact
-coverage, gaps, and limitations. AI explanations are cached locally under
+coverage, gaps, and limitations. Schema version 5 preserves established impacts
+without fixes and records their `fixUnavailableReason`; an unavailable fix alone
+does not make impact coverage partial. AI explanations are cached locally under
 `output/fabric/impact/<preset-id>/cache`. Repeated identical target source,
 instructions, change context, prompt/schema and concrete model reuse the cached
 result after response-format, target-scope and proposed-replacement validation
@@ -412,8 +475,9 @@ handled as repository-sensitive data.
 
 Notebook and other-model coverage is local and static, not a guarantee that every runtime
 dependency or workspace item was found. Dynamic code, ambiguous lakehouse scopes,
-unreadable definitions and parser gaps are disclosed. Each artifact is limited
-to 100,000 selected source characters; a request including numbered cells/model
+unreadable definitions and parser gaps are disclosed. Each request (a notebook,
+pipeline or semantic-model batch) is limited to 100,000 selected source characters;
+a request including raw cells/model
 source, scoped lineage and change context is limited to 180,000 characters.
 Before **every** send, the active model's advertised prompt and context-window
 limits are checked against a conservative UTF-8-byte token upper bound for the
@@ -431,8 +495,10 @@ Run the focused tests and Fabric regressions with:
 
 ```powershell
 python -m unittest fabric.tests.test_impact fabric.tests.test_fabric_schema fabric.tests.test_lineage fabric.tests.test_fabric
+python -m unittest fabric.tests.test_impact_objects fabric.tests.test_impact_batches fabric.tests.test_impact_results
 node --check .\fabric\frontend\static\js\impact.js
 node --test .\fabric\tests\impact_login.test.cjs
+node --test .\fabric\tests\impact_report.test.cjs
 ```
 
 ## Hybrid model refresh

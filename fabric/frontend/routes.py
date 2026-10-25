@@ -52,6 +52,15 @@ def preset_page(preset_id):
     return render_template(
         "fabric/preset.html", preset=preset, local_repository_path=local_repository_path,
         mapping=mapping,
+        notebook_names={item["key"]: item["name"] for item in (mapping or {}).get("notebooks", [])},
+        notebook_ids={
+            item["key"]: f"lineageNotebook{index}"
+            for index, item in enumerate((mapping or {}).get("notebooks", []))
+        },
+        pipeline_ids={
+            item["key"]: f"lineagePipeline{index}"
+            for index, item in enumerate((mapping or {}).get("pipelines", []))
+        },
     )
 
 

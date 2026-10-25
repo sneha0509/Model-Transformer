@@ -1,11 +1,10 @@
 (() => {
     const svg = document.getElementById("lineageGraph");
     if (!svg) return;
-    const status = document.getElementById("lineageGraphStatus");
-    const details = document.getElementById("lineageGraphDetails");
     const zoomLevel = document.getElementById("lineageZoomLevel");
     const search = document.getElementById("lineageGraphSearch");
     const tableFilter = document.getElementById("lineageGraphTable");
+    const includeTables = document.getElementById("lineageGraphTables");
     const includeReads = document.getElementById("lineageGraphReads");
     const fitFlow = document.getElementById("lineageFitFlow");
     const clearFlow = document.getElementById("lineageClearFlow");
@@ -23,6 +22,14 @@
         return result;
     }
 
+    function showError(message) {
+        const error = document.createElement("p");
+        error.className = "fabric-status is-error";
+        error.setAttribute("role", "alert");
+        error.textContent = message;
+        svg.after(error);
+    }
+
     let graph;
     try {
         graph = JSON.parse(document.getElementById("lineageGraphData").textContent);
@@ -30,17 +37,36 @@
             throw new Error("The saved graph is missing nodes or relationships.");
         }
     } catch (error) {
-        status.classList.add("is-error");
-        status.textContent = `Could not display lineage: ${error.message} Use Refresh repository & lineage to rebuild it.`;
+        showError(`Could not display lineage: ${error.message} Use Refresh repository & lineage to rebuild it.`);
         return;
     }
     const nodes = new Map(graph.nodes.map(node => [node.id, {...node, visible: true}]));
-    const edges = graph.edges;
+    const edges = graph.edges.map(edge => ({...edge}));
     if (!nodes.has(graph.root) || edges.some(edge => !nodes.has(edge.source) || !nodes.has(edge.target))) {
-        status.classList.add("is-error");
-        status.textContent = "The saved lineage graph is incomplete. Use Refresh repository & lineage to rebuild it.";
+        showError("The saved lineage graph is incomplete. Use Refresh repository & lineage to rebuild it.");
         return;
     }
+    const modelTables = new Map(edges
+        .filter(edge => edge.source === graph.root && nodes.get(edge.target).type === "Table")
+        .map(edge => [edge.target, edge]));
+    const collapsedEdges = new Map();
+    edges.forEach(edge => {
+        const source = modelTables.get(edge.source);
+        if (!source || nodes.get(edge.target).type !== "Notebook") return;
+        const status = source.status === "unverified" || edge.status === "unverified"
+            ? "unverified" : edge.status;
+        const key = JSON.stringify([edge.target, edge.label, status]);
+        if (!collapsedEdges.has(key)) {
+            collapsedEdges.set(key, {
+                id: `collapsed:${edge.id}`, source: graph.root, target: edge.target,
+                label: `source ${edge.label}`, operation: edge.label, status,
+                collapsed: true, tableIds: [],
+            });
+        }
+        const tables = collapsedEdges.get(key).tableIds;
+        if (!tables.includes(edge.source)) tables.push(edge.source);
+    });
+    edges.push(...collapsedEdges.values());
     const outgoing = new Map([...nodes.keys()].map(id => [id, []]));
     const incoming = new Map([...nodes.keys()].map(id => [id, []]));
     const incident = new Map([...nodes.keys()].map(id => [id, []]));
@@ -269,15 +295,6 @@
         fit();
     }
 
-    function detailLine(label, value) {
-        if (value === undefined || value === null || value === "") return;
-        const line = document.createElement("p");
-        const heading = document.createElement("strong");
-        heading.textContent = `${label}: `;
-        line.append(heading, document.createTextNode(typeof value === "object" ? JSON.stringify(value) : String(value)));
-        details.append(line);
-    }
-
     function inspect(item, edge = false) {
         selected?.setAttribute("aria-pressed", "false");
         selected?.classList.remove("is-selected");
@@ -285,23 +302,6 @@
         selected.classList.add("is-selected");
         selected.setAttribute("aria-pressed", "true");
         highlightFlow(item, edge);
-        details.replaceChildren();
-        detailLine(edge ? "Relationship" : labels[item.type], edge
-            ? `${nodes.get(item.source).label} \u2192 ${nodes.get(item.target).label}` : item.label);
-        if (edge) detailLine("Operation", item.label);
-        detailLine("Status", item.status);
-        detailLine("Source", item.path);
-        detailLine("Physical table", item.physicalTable);
-        detailLine("Scope", item.scope);
-        detailLine("Parameters", item.parameters);
-        detailLine("Invocation contexts", item.contexts);
-        (item.evidence || []).forEach(source => {
-            detailLine("Evidence", `${source.file}${source.line ? `:${source.line}` : ""}${source.jsonPointer || ""}${source.partition ? ` (partition: ${source.partition})` : ""}`);
-        });
-        if (item.status === "unverified") {
-            detailLine("Caution", "Table names match, but schema/workspace/lakehouse identity is not proven. This is a candidate, not confirmed lineage.");
-        }
-        detailLine("Highlighted flow", `${pathNodes.size} nodes and ${pathEdges.size} relationships. Use Fit selected flow to follow this path.`);
     }
 
     function clearHighlight() {
@@ -348,7 +348,6 @@
         svg.classList.remove("has-focused-flow");
         fitFlow.disabled = true;
         clearFlow.disabled = true;
-        details.textContent = "Select a node or relationship to highlight its flow and inspect its evidence.";
         updateStatus();
     }
 
@@ -501,7 +500,7 @@
             node.element.classList.toggle("is-search-match", match);
             if (match) matches++;
         });
-        if (query) status.textContent = `${matches} matching nodes. Press Enter to focus the first match.`;
+        if (query) svg.setAttribute("aria-description", `${matches} matching nodes. Press Enter to focus the first match.`);
         else updateStatus();
     });
     search.addEventListener("keydown", event => {
@@ -524,14 +523,15 @@
     function updateStatus() {
         const visibleNodes = [...nodes.values()].filter(node => node.visible).length;
         const visibleEdges = edges.filter(edge => edge.visible);
-        status.textContent = `${visibleNodes} of ${nodes.size} nodes and ${visibleEdges.length} relationships shown. `
+        svg.setAttribute("aria-description", `${visibleNodes} of ${nodes.size} nodes and ${visibleEdges.length} relationships shown. `
             + `${visibleEdges.filter(edge => edge.status === "unverified").length} unverified relationships. `
+            + (includeTables.checked ? "Source tables expanded. " : "Source tables collapsed. ")
             + (includeReads.checked ? "Notebook writes and reads included." : "Notebook writes only.")
-            + (pathNodes.size ? ` Selected flow: ${pathNodes.size} nodes and ${pathEdges.size} relationships.` : "");
+            + (pathNodes.size ? ` Selected flow: ${pathNodes.size} nodes and ${pathEdges.size} relationships.` : ""));
     }
 
     function updateVisibility() {
-        const enabled = edge => includeReads.checked || edge.label !== "read by";
+        const enabled = edge => includeReads.checked || (edge.operation || edge.label) !== "read by";
         const visible = new Set(tableFilter.value ? [graph.root] : []);
         const pending = [tableFilter.value || graph.root];
         while (pending.length) {
@@ -539,17 +539,21 @@
             if (visible.has(key)) continue;
             visible.add(key);
             outgoing.get(key).forEach(edge => {
-                if (enabled(edge)) pending.push(edge.target);
+                if (!edge.collapsed && enabled(edge)) pending.push(edge.target);
             });
         }
         nodes.forEach(node => {
-            node.visible = visible.has(node.id);
+            node.visible = visible.has(node.id) && (includeTables.checked || node.type !== "Table");
             node.element.classList.toggle("is-hidden", !node.visible);
             node.element.classList.remove("is-selected");
             node.element.classList.remove("is-search-match");
         });
         edges.forEach(edge => {
-            edge.visible = enabled(edge) && visible.has(edge.source) && visible.has(edge.target);
+            const shown = edge.collapsed
+                ? !includeTables.checked && edge.tableIds.some(id => visible.has(id))
+                : true;
+            edge.visible = shown && enabled(edge)
+                && nodes.get(edge.source).visible && nodes.get(edge.target).visible;
             edge.element.classList.toggle("is-hidden", !edge.visible);
             edge.element.classList.remove("is-selected");
         });
@@ -559,6 +563,7 @@
         layout();
     }
     tableFilter.addEventListener("change", updateVisibility);
+    includeTables.addEventListener("change", updateVisibility);
     includeReads.addEventListener("change", updateVisibility);
     updateVisibility();
     new ResizeObserver(() => fit()).observe(svg);

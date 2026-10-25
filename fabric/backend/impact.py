@@ -33,7 +33,7 @@ LIMITATIONS = [
     "Review only: no notebook, repository file, source schema or live Fabric item is changed.",
     "The selected model schema comes from Fabric; notebook and other model coverage is limited to the local repository snapshot.",
     "AI findings and suggested replacements require human review and runtime/model validation.",
-    "AI citations are not source-verified in v1: file names, line ranges and excerpts may be inaccurate and require manual review.",
+    "AI citations for generated fixes are not source-verified: locations and excerpts require manual review. Impacts without fixes must include verified source evidence from their named target.",
     "Static table lineage is not proof of column-level flow; dynamic references and scope ambiguity remain gaps.",
     "Notebook requests contain lineage-relevant code cells and their static dependencies, not whole notebook exports. Unresolved dependencies are explicit gaps.",
     "Notebook requests retain original cell numbers and exported-code line numbers; outputs, markdown and export metadata are not sent.",
@@ -398,6 +398,25 @@ def validate_changes(payload, catalog):
     return validated
 
 
+def _has_target_evidence(impact, sources):
+    for source in sources.values():
+        if (source.get("objectType"), source.get("objectName")) != (
+            impact["objectType"], impact["objectName"],
+        ):
+            continue
+        lines = source["source"].splitlines()
+        for citation in impact["evidence"]:
+            if citation["file"] != source["file"]:
+                continue
+            offset = citation["line"] - source["startLine"]
+            excerpt = citation["excerpt"].splitlines()
+            if 0 <= offset and offset + len(excerpt) <= len(lines) and (
+                "\n".join(excerpt) in "\n".join(lines[offset:offset + len(excerpt)])
+            ):
+                return True
+    return False
+
+
 def validate_result(result, changes, artifacts):
     """Validate response structure, target scope and proposed replacements."""
     if not isinstance(result, dict):
@@ -477,12 +496,21 @@ def validate_result(result, changes, artifacts):
             continue
         fixes = impact.get("proposedFixes")
         steps = impact.get("validationSteps")
-        if not isinstance(fixes, list) or not fixes:
-            raise ValueError("Every AI impact must include non-empty proposedFixes with actual before/after code, not manual validation.")
+        if not isinstance(fixes, list):
+            raise ValueError("Every AI impact must include a proposedFixes array.")
         if not isinstance(steps, list):
             raise ValueError("Every AI impact must include a validationSteps array.")
         for step in steps:
             _text(step, "Validation step", 4000)
+        reason = impact.get("fixUnavailableReason")
+        if not fixes:
+            impact["fixUnavailableReason"] = _text(reason, "Fix unavailable reason", 1000)
+            if not _has_target_evidence(impact, sources[artifact_key]):
+                raise ValueError("An impact without a fix must include matching source evidence from its named target.")
+            continue
+        if reason is not None:
+            raise ValueError("An impact with generated fixes must have a null fix unavailable reason.")
+        impact["fixUnavailableReason"] = None
         for fix in fixes:
             if not isinstance(fix, dict):
                 raise ValueError("Each proposed fix must be an object.")
@@ -557,7 +585,7 @@ def save_report(preset_id, catalog, changes, results, skipped):
     ] + skipped
     analyzed = {key for result in results for key in result["analyzedArtifacts"]}
     report = {
-        "schemaVersion": 4, "reportId": report_id, "presetId": preset_id,
+        "schemaVersion": 5, "reportId": report_id, "presetId": preset_id,
         "generatedAt": datetime.now(timezone.utc).isoformat(), "revision": catalog["revision"],
         "selection": catalog["selection"],
         "instructions": catalog.get("instructions", ""),

@@ -19,7 +19,7 @@ from fabric.backend.impact import (
     replacement_sources, save_report, validate_result,
 )
 from fabric.backend.impact_context import scope_catalog
-from fabric.backend.impact_objects import target_catalog
+from fabric.backend.impact_objects import model_request_batches, target_catalog
 from fabric.backend import impact as impact_reports
 from fabric.backend.filesystem import filesystem_path
 
@@ -27,6 +27,7 @@ from fabric.backend.filesystem import filesystem_path
 OUTPUT_TOKENS = 8192
 REQUEST_CHARACTERS = 180_000
 PROTOCOL_TOKEN_RESERVE = 4096
+MODEL_TARGETS_PER_REQUEST = 8
 
 
 class CopilotAuthenticationRequired(RuntimeError):
@@ -62,10 +63,11 @@ RESPONSE_SCHEMA = _object({
         "evidence": _array(_object({
             "file": _STRING, "line": {"type": "integer"}, "excerpt": _STRING,
         })),
-        "proposedFixes": {**_array(_object({
+        "proposedFixes": _array(_object({
             "sourceId": _STRING, "after": {"type": "string"},
             "rationale": {"type": "string", "minLength": 1, "maxLength": MAX_ACTION_CHARACTERS},
-        })), "minItems": 1},
+        })),
+        "fixUnavailableReason": {"type": ["string", "null"], "minLength": 1, "maxLength": 1000},
         "validationSteps": _array(_STRING),
     })),
     "unaffectedTargets": _array(_object({
@@ -91,11 +93,16 @@ startLine is its original exported-source line. Do not invent or infer omitted c
 Only supplied cells and model/pipeline source segments may be cited or proposed for edits.
 Code has ALREADY identified the impacted objects and dependency lineage.
 Do not discover other objects, scan the repository, or expand the target set.
-For each supplied target generate the minimal concrete code changes needed.
-An impact MUST contain non-empty proposedFixes with actual replacement code.
-Do not return validation-only findings or substitute instructions for code.
-If a target needs no code change, use unaffectedTargets. If required information
-is missing, identify it in gaps rather than creating a prose-only impact.
+For each supplied target determine the consequence of the selected changes,
+independently of whether a safe automatic fix can be generated.
+Report a source-backed failure or changed result as an impact even when its
+repair requires an unspecified business rule. This includes downstream measures
+whose DAX text is unchanged but whose referenced measure becomes invalid.
+Generate minimal concrete replacement code when it can be safely derived.
+Never report a dependency or a generic need for validation as an impact.
+Use unaffectedTargets only when no concrete consequence is supported, not merely
+because no local code edit is needed. If the consequence itself cannot be
+established, report the uncertainty in gaps.
 Use EXACT objectType and objectName from targetedObjects in every impact.
 Source segments contain only targeted model objects or pipeline activities and
 their prerequisites, not whole definitions. Retain their original file/line coordinates.
@@ -124,8 +131,18 @@ Unknown or ambiguous behavior is a gap, never proof that a target is unaffected.
 Each impact must reference provided change IDs and this artifact's key.
 Evidence line numbers are 1-based in the supplied file; add the source's startLine
 to its zero-based line offset. Excerpt must copy actual source text at that line.
-Code changes are the deliverable, not a prose description of a fix.
-For EVERY impact, populate proposedFixes with a sourceId and concrete after code.
+For impacts with a safe fix, populate proposedFixes with a sourceId and concrete
+after code, and set fixUnavailableReason to null.
+If the impact is established but no safe fix can be derived, keep it in impacts,
+set proposedFixes to [], and supply a specific fixUnavailableReason naming the
+missing replacement, business decision or information. Cite actual source from
+that named target at its original line; these citations are source-verified.
+For example, removing a column used by SUM breaks the direct measure and measures
+that depend on it. Report those failures even if replacement revenue logic or
+measure-retirement approval has not been supplied. Never invent a substitute,
+replace the result with zero/BLANK(), or retire measures without authorization.
+Do not move an established breakage into gaps merely because its fix is unknown,
+and do not label an unchanged downstream expression unaffected if it will fail.
 Copy sourceId exactly from the named target's editable source. Context-only
 sources with editable=false cannot be changed. Do not return file or before:
 the application obtains both from the exact source identified by sourceId.
@@ -136,7 +153,7 @@ For model.bim and JSON, return the complete affected entity (measure, column,
 relationship, activity, parameter), not the whole file. For TMDL return the
 affected declaration. For PySpark, Python, Scala and SQL return the affected
 notebook cell. Preserve unrelated code, formatting and metadata in that entity.
-Each fix MUST edit the named target itself, not just a prerequisite or caller.
+Each proposed fix MUST edit the named target itself, not just a prerequisite or caller.
 Separate targets require separate impacts. Multiple edits within one entity
 must be combined into one consistent after version.
 After must replace the COMPLETE source entity identified by sourceId, preserve
@@ -149,8 +166,9 @@ SUMX('Orders', CONVERT('Orders'[amount], DOUBLE)) instead of SUM on a text colum
 PySpark col("amount").cast("double"), or the corresponding Scala cast).
 Adapt conversions to the supplied code and required numeric precision. Do not
 silently replace invalid numbers with zero, drop rows or suppress conversion errors.
-If the required replacement or business rule is genuinely unspecified, report
-that exact missing input in gaps. Never invent columns or business rules.
+If the required replacement or business rule is genuinely unspecified, name
+that exact missing input in fixUnavailableReason for an established impact.
+Use gaps only when the impact cannot be established. Never invent columns or business rules.
 Do not invent alternate columns for dropped columns or silently change business
 logic, security filters, relationship cardinality or data-loss behavior.
 Impact and recommendation MUST be arrays of 1-4 short, single-line items, at
@@ -301,6 +319,29 @@ def _write_cache(path, result):
             os.unlink(temporary)
 
 
+def _analysis_requests(scoped, changes, models, requested_model):
+    def fits(artifact):
+        if sum(len(part["source"]) for part in artifact["sourceSegments"]) > MAX_ARTIFACT_CHARACTERS:
+            return False
+        selected_changes = [change for change in changes if change["id"] in artifact["changeIds"]]
+        prompt = _prompt(scoped, selected_changes, artifact)
+        if len(prompt) > REQUEST_CHARACTERS:
+            return False
+        model = _select_model(models, prompt, requested_model)
+        budget = _context_budget(model, prompt)
+        return budget["inputTokenUpperBound"] <= budget["inputTokenLimit"]
+
+    requests = []
+    for artifact in scoped["artifacts"]:
+        batches = model_request_batches(artifact, fits, MODEL_TARGETS_PER_REQUEST) if (
+            artifact["type"] == "SemanticModel"
+        ) else [artifact]
+        requests.extend({
+            **batch, "batchIndex": index, "batchCount": len(batches),
+        } for index, batch in enumerate(batches, 1))
+    return requests
+
+
 async def analyze(preset_id, catalog, changes, progress):
     results = []
     skipped = []
@@ -325,15 +366,26 @@ async def analyze(preset_id, catalog, changes, progress):
             )
         models = {model.id: model for model in await client.list_models()}
         requested_model = os.getenv("FABRIC_IMPACT_MODEL")
-        for index, artifact in enumerate(artifacts, 1):
-            progress(index, len(artifacts), artifact["name"])
+        requests = _analysis_requests(scoped, changes, models, requested_model)
+        usage["targetedRequests"] = len(requests)
+        for index, artifact in enumerate(requests, 1):
+            name = artifact["name"]
+            if artifact["batchCount"] > 1:
+                name += f" (batch {artifact['batchIndex']}/{artifact['batchCount']})"
+            progress(index, len(requests), name)
+            inventory = report_catalog["inventoryScope"][artifact["key"]]
+            batch = {
+                "index": artifact["batchIndex"], "targetCount": len(artifact["targets"]),
+                "targetIds": [target["id"] for target in artifact["targets"]], "status": "skipped",
+            }
+            inventory.setdefault("batches", []).append(batch)
             source_characters = sum(len(cell["source"]) for cell in artifact["cells"]) if (
                 artifact["type"] == "Notebook"
             ) else sum(len(part["source"]) for part in artifact["sourceSegments"])
             if source_characters > MAX_ARTIFACT_CHARACTERS:
                 skipped.append({
                     "file": artifact["key"],
-                    "message": f"Selected source exceeds the {MAX_ARTIFACT_CHARACTERS:,}-character analysis limit and was not sent to Copilot.",
+                    "message": f"{name}: selected source exceeds the {MAX_ARTIFACT_CHARACTERS:,}-character analysis limit and was not sent to Copilot. Targets: {', '.join(target['objectName'] for target in artifact['targets'])}.",
                 })
                 continue
             artifact_changes = [change for change in changes if change["id"] in artifact["changeIds"]]
@@ -350,7 +402,7 @@ async def analyze(preset_id, catalog, changes, progress):
                 if len(prompt) > REQUEST_CHARACTERS:
                     skipped.append({
                         "file": artifact["key"],
-                        "message": f"Selected cells/model plus scoped context exceeds the {REQUEST_CHARACTERS:,}-character request limit; not analyzed.",
+                        "message": f"{name}: selected cells/model plus scoped context exceeds the {REQUEST_CHARACTERS:,}-character request limit; not analyzed.",
                     })
                     break
                 # A fresh correction session avoids accumulating prior prompts and
@@ -379,13 +431,14 @@ async def analyze(preset_id, catalog, changes, progress):
                         )
                     model = selected_model
                     budget = _context_budget(model, prompt)
-                    report_catalog["inventoryScope"][artifact["key"]]["contextBudget"] = budget
+                    inventory["contextBudget"] = budget
+                    batch["contextBudget"] = budget
                     cache_path = _cache_path(preset_id, model.id, original_prompt)
                     if budget["inputTokenUpperBound"] > budget["inputTokenLimit"]:
                         skipped.append({
                             "file": artifact["key"],
                             "message": (
-                                f"Context budget exceeded for {model.id}: conservative input bound "
+                                f"{name}: context budget exceeded for {model.id}: conservative input bound "
                                 f"{budget['inputTokenUpperBound']:,} tokens > {budget['inputTokenLimit']:,} "
                                 f"after reserving output and safety space; no request sent"
                                 f"{' on correction attempt' if attempt else ''}."
@@ -396,7 +449,7 @@ async def analyze(preset_id, catalog, changes, progress):
                         cached = _read_cache(cache_path, artifact_changes, artifact)
                         if cached is not None:
                             usage["cacheHits"] += 1
-                            report_catalog["inventoryScope"][artifact["key"]]["aiSource"] = "cache"
+                            batch.update(status="analyzed", aiSource="cache")
                             cached["analyzedArtifacts"] = [artifact["key"]]
                             results.append(cached)
                             break
@@ -409,25 +462,37 @@ async def analyze(preset_id, catalog, changes, progress):
                     except ValueError as exc:
                         if attempt:
                             raise ValueError(f"Copilot analysis for {artifact['key']} failed validation: {exc}") from exc
-                        progress(index, len(artifacts), f"{artifact['name']} (correcting invalid AI output)")
+                        progress(index, len(requests), f"{name} (correcting invalid AI output)")
                         correction = (
                             f"\nYour previous result failed source/schema validation: {str(exc)[:1000]}. "
                             "Generate the COMPLETE result using only the supplied source. "
-                            "Every impact needs non-empty proposedFixes with actual new code for that target. "
-                            "Copy the named target's editable sourceId and return its complete changed after code; "
-                            "the application supplies the exact file and before text. Do not invent source IDs or citations. "
-                            "If essential input is missing, "
-                            "report the missing input in gaps, not as a manual-validation impact."
+                            "Keep source-backed consequences in impacts even if no safe fix can be generated. "
+                            "For a safe fix, copy the target's editable sourceId, return its complete changed "
+                            "after code, and set fixUnavailableReason to null. Otherwise return proposedFixes=[] "
+                            "with a specific fixUnavailableReason and a verified citation from the named target. "
+                            "The application supplies file and before text. Do not invent source IDs, citations, "
+                            "replacement business logic or measure-retirement rules. Only uncertain consequences "
+                            "belong in gaps; generic validation needs are not impacts."
                         )
                         continue
                     result["analyzedArtifacts"] = [artifact["key"]]
                     _write_cache(cache_path, result)
-                    report_catalog["inventoryScope"][artifact["key"]]["aiSource"] = "copilot"
+                    batch.update(status="analyzed", aiSource="copilot")
                     results.append(result)
                     break
                 finally:
                     await session.disconnect()
                     await client.delete_session(session.session_id)
+        for artifact in artifacts:
+            inventory = report_catalog["inventoryScope"][artifact["key"]]
+            batches = inventory["batches"]
+            completed = [batch for batch in batches if batch["status"] == "analyzed"]
+            inventory["status"] = (
+                "analyzed" if len(completed) == len(batches) else "partial" if completed else "skipped"
+            )
+            sources = {batch["aiSource"] for batch in completed}
+            if sources:
+                inventory["aiSource"] = next(iter(sources)) if len(sources) == 1 else "mixed"
     if not results:
         raise ValueError("No artifacts could be analyzed within the context limits. Reduce the selected change set or artifact size.")
     return save_report(preset_id, report_catalog, changes, results, skipped)

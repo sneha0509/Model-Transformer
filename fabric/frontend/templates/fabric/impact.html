@@ -24,7 +24,7 @@
         <div>
             <p class="step-kicker">Schema change review</p>
             <h2 id="impactHeading">{{ preset.semanticModel.name }}</h2>
-            <p class="impact-page-description">AI-generated code changes for affected entities: before, after, and diff.</p>
+            <p class="impact-page-description">Review affected entities, DAX breakages, proposed code changes, and decisions needed for safe fixes.</p>
             <dl class="impact-context">
                 <div><dt>Workspace</dt><dd>{{ preset.workspace.displayName }}</dd></div>
                 <div><dt>Repository</dt><dd>{{ preset.repository.name }}</dd></div>
@@ -103,13 +103,13 @@
         <div class="impact-section-heading">
             <div>
                 <h3>Affected artifacts</h3>
-                <p class="fabric-status">Each action shows the affected entity before and after the AI-proposed code change.</p>
+                <p class="fabric-status">Each finding explains the impact, with proposed code or the decision needed before a safe fix is available.</p>
             </div>
         </div>
         <div id="impactArtifactFilters" class="impact-artifact-filters" role="group" aria-label="Filter affected artifacts"></div>
         <div id="impactFindings"></div>
         <section id="impactReviewNotes" class="impact-review-notes" aria-labelledby="impactReviewHeading" hidden>
-            <h3 id="impactReviewHeading">Code generation gaps</h3>
+            <h3 id="impactReviewHeading">Analysis gaps</h3>
             <ul id="impactReportGaps"></ul>
         </section>
         <details class="impact-dependency-details">

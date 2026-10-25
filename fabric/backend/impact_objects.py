@@ -16,6 +16,10 @@ _DECLARATION = re.compile(
     rf"\s+(?P<name>{_NAME})(?P<tail>[^\n]*)$"
 )
 _DAX_REFERENCE = re.compile(r"(?:(?P<table>'(?:[^']|'')*'|[A-Za-z_]\w*)\s*)?\[(?P<name>(?:[^\]]|\]\])*)\]")
+_RELATIONSHIP_CALL = re.compile(
+    r"\b(?:USERELATIONSHIP|CROSSFILTER)\s*\(\s*", re.IGNORECASE,
+)
+_TMDL_ENDPOINT = re.compile(r"('(?:[^']|'')*'|[^\s.']+)\.('(?:[^']|'')*'|[^\s']+)")
 
 
 def _id(*parts):
@@ -150,6 +154,7 @@ def _dax_code(source):
 
 def _wire_model(objects, issues):
     columns, measures, tables = {}, {}, {}
+    relationships, incoming = {}, {}
     expressions = {item["name"].casefold(): item for item in objects if item["objectType"] == "expression"}
     for item in objects:
         kind, table, name = item["objectType"], item["table"].casefold(), item["name"].casefold()
@@ -164,20 +169,49 @@ def _wire_model(objects, issues):
         target = columns.get((table.casefold(), name.casefold()))
         if target:
             item["dependencies"].add(target["id"])
+        return target
+
+    for item in objects:
+        if item["objectType"] != "relationship":
+            continue
+        definition, source = item["definition"], item["segment"]["source"]
+        endpoints = []
+        for side in ("from", "to"):
+            if definition:
+                table, name = definition.get(side + "Table", ""), definition.get(side + "Column", "")
+            else:
+                property_match = re.search(rf"(?m)^\s*{side}Column:\s*(.*?)\s*$", source)
+                endpoint = property_match[1] if property_match else ""
+                match = _TMDL_ENDPOINT.fullmatch(endpoint)
+                table, name = (_name(match[1]), _name(match[2])) if match else ("", "")
+            target = column(item, table, name)
+            if target:
+                endpoints.append(target)
+            else:
+                issues.append({
+                    "file": item["segment"]["file"],
+                    "message": f"Unresolved {side} endpoint {table}.{name} in relationship {item['name']}; dependent calculation coverage is incomplete.",
+                })
+        if len(endpoints) != 2:
+            continue
+        relationships.setdefault(frozenset(target["id"] for target in endpoints), []).append(item)
+        active = definition.get("isActive", True) if definition else not re.search(
+            r"(?im)^\s*isActive:\s*false\s*$", source,
+        )
+        if not active:
+            continue
+        from_table, to_table = (target["table"].casefold() for target in endpoints)
+        incoming.setdefault(from_table, []).append((to_table, item["id"]))
+        behavior = definition.get("crossFilteringBehavior", "") if definition else ""
+        if not definition:
+            match = re.search(r"(?m)^\s*crossFilteringBehavior:\s*(\w+)", source)
+            behavior = match[1] if match else ""
+        if behavior.casefold() == "bothdirections":
+            incoming.setdefault(to_table, []).append((from_table, item["id"]))
 
     for item in objects:
         kind, definition = item["objectType"], item["definition"]
         source = item["segment"]["source"]
-        if kind == "relationship":
-            for side in ("from", "to"):
-                if definition:
-                    column(item, definition.get(side + "Table", ""), definition.get(side + "Column", ""))
-                else:
-                    property_match = re.search(rf"(?m)^\s*{side}Column:\s*(.*?)\s*$", source)
-                    endpoint = property_match[1] if property_match else ""
-                    match = re.fullmatch(rf"({_NAME})\.(.+)", endpoint)
-                    if match:
-                        column(item, _name(match[1]), _name(match[2]))
         if kind in {"column", "calculated_column", "hierarchy"}:
             names = [definition.get("sortByColumn", "")]
             names.extend(level.get("column", "") for level in definition.get("levels", []))
@@ -215,6 +249,7 @@ def _wire_model(objects, issues):
         if not expression:
             continue
         dax = _dax_code(expression)
+        referenced_tables = set()
         for match in _DAX_REFERENCE.finditer(dax):
             name = match["name"].replace("]]", "]")
             owner = _name(match["table"]) if match["table"] else next(
@@ -228,6 +263,10 @@ def _wire_model(objects, issues):
                 issues.append({"file": item["segment"]["file"],
                                "message": f"Ambiguous DAX reference [{name}] in {item['objectName']}; all candidates retained."})
             item["dependencies"].update(candidate["id"] for candidate in candidates)
+            referenced_tables.update(
+                candidate["table"].casefold() for candidate in candidates
+                if candidate["objectType"] in {"column", "calculated_column"}
+            )
         without_references = _DAX_REFERENCE.sub(" ", dax)
         for name, target in tables.items():
             quoted = "'" + target["name"].replace("'", "''") + "'"
@@ -235,6 +274,46 @@ def _wire_model(objects, issues):
                 rf"(?<![\w']){re.escape(target['name'])}(?![\w'])", without_references, re.IGNORECASE,
             ):
                 item["dependencies"].add(target["id"])
+                referenced_tables.add(name)
+        for call in _RELATIONSHIP_CALL.finditer(dax):
+            first = _DAX_REFERENCE.match(dax, call.end())
+            separator = re.match(r"\s*,\s*", dax[first.end():]) if first else None
+            second = _DAX_REFERENCE.match(dax, first.end() + separator.end()) if separator else None
+            if not first or not second:
+                issues.append({
+                    "file": item["segment"]["file"],
+                    "message": f"Unresolved relationship function in {item['objectName']}; relationship coverage is incomplete.",
+                })
+                continue
+            endpoints = [
+                columns.get((
+                    (_name(match["table"]) if match["table"] else item["table"]).casefold(),
+                    match["name"].replace("]]", "]").casefold(),
+                )) for match in (first, second)
+            ]
+            matches = relationships.get(
+                frozenset(target["id"] for target in endpoints if target), [],
+            ) if all(endpoints) else []
+            if not matches:
+                issues.append({
+                    "file": item["segment"]["file"],
+                    "message": f"No static relationship resolved for {call[0].strip()} in {item['objectName']}.",
+                })
+            item["dependencies"].update(target["id"] for target in matches)
+        if kind == "measure" or re.search(
+            r"\b(?:RELATED|RELATEDTABLE|CALCULATE|CALCULATETABLE)\s*\(", dax, re.IGNORECASE,
+        ):
+            if kind == "calculated_column":
+                referenced_tables.add(item["table"].casefold())
+            pending, visited = list(referenced_tables), set()
+            while pending:
+                table = pending.pop()
+                if table in visited:
+                    continue
+                visited.add(table)
+                for parent, relationship_id in incoming.get(table, []):
+                    item["dependencies"].add(relationship_id)
+                    pending.append(parent)
         if kind in {"partition", "calculated_table", "expression"}:
             for name, target in expressions.items():
                 if re.search(rf"(?<!\w){re.escape(target['name'])}(?!\w)", expression, re.IGNORECASE):
@@ -275,6 +354,28 @@ def _slice_artifact(artifact, targets, objects):
             for file in artifact["files"]
         },
     }
+
+
+def model_request_batches(artifact, fits, maximum_targets):
+    if len(artifact["targets"]) <= maximum_targets and fits(artifact):
+        return [artifact]
+    objects = _model_objects(artifact)
+    _wire_model(objects, [])
+    by_id = {item["id"]: item for item in objects}
+    targets = []
+    for target in artifact["targets"]:
+        item = by_id[target["id"]]
+        item.update(target)
+        targets.append(item)
+
+    def split(selected):
+        request = _slice_artifact(artifact, selected, objects)
+        if len(selected) > 1 and (len(selected) > maximum_targets or not fits(request)):
+            middle = len(selected) // 2
+            return split(selected[:middle]) + split(selected[middle:])
+        return [request]
+
+    return split(targets)
 
 
 def _public(item):
