@@ -99,19 +99,19 @@
             <div id="impactSummaries"></div>
             <div id="impactChangedColumns" class="impact-change-chips"></div>
         </details>
-        <p id="impactReviewNotice" class="impact-review-notice" hidden></p>
         <div class="impact-section-heading">
             <div>
                 <h3>Affected artifacts</h3>
-                <p class="fabric-status">Each finding explains the impact, with proposed code or the decision needed before a safe fix is available.</p>
+                <p class="fabric-status">Review each affected entity, its component code, and the proposed fix or decision needed for a safe change.</p>
             </div>
         </div>
         <div id="impactArtifactFilters" class="impact-artifact-filters" role="group" aria-label="Filter affected artifacts"></div>
         <div id="impactFindings"></div>
-        <section id="impactReviewNotes" class="impact-review-notes" aria-labelledby="impactReviewHeading" hidden>
-            <h3 id="impactReviewHeading">Analysis gaps</h3>
+        <details id="impactReviewNotes" class="impact-review-notes" aria-labelledby="impactReviewHeading" hidden>
+            <summary id="impactReviewHeading">Analysis gaps</summary>
+            <p id="impactReviewNotice" class="impact-review-notice" hidden></p>
             <ul id="impactReportGaps"></ul>
-        </section>
+        </details>
         <details class="impact-dependency-details">
             <summary>Dependency connections</summary>
             <div id="impactLineage" class="impact-lineage"></div>

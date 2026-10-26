@@ -5,13 +5,22 @@
     const browser = document.getElementById("lineageArtifactBrowser");
     if (browser && search && status) {
         const panel = document.getElementById("lineageNotebookDetails");
+        const relatedScope = document.getElementById("lineageScopeRelated");
+        const scopeInputs = [...document.querySelectorAll('[name="lineageInventoryScope"]')];
         const emptyState = panel.firstElementChild;
         const tabs = [...browser.querySelectorAll('[role="tab"]')];
+        const relatedText = template => {
+            const content = template.content.cloneNode(true);
+            content.querySelectorAll('[data-lineage-related="false"]').forEach(record => record.remove());
+            return content.textContent;
+        };
         const notebookTemplates = new Map(
             [...browser.querySelectorAll("[data-lineage-notebook-template]")].map(template => [
                 template.id, {
                     template,
-                    searchable: template.content.textContent.toLocaleLowerCase(),
+                    related: template.dataset.lineageRelated === "true",
+                    searchable: `${template.dataset.lineageNotebookName} ${template.content.textContent}`.toLocaleLowerCase(),
+                    relatedSearchable: `${template.dataset.lineageNotebookName} ${relatedText(template)}`.toLocaleLowerCase(),
                 },
             ])
         );
@@ -23,13 +32,17 @@
         });
         const pipelines = [...browser.querySelectorAll("[data-lineage-pipeline-record]")].map(record => {
             const button = record.querySelector("[data-lineage-pipeline]");
+            const name = button.querySelector(".lineage-artifact-name").textContent;
             const template = document.getElementById(button.dataset.lineagePipeline);
             const dependencies = [...template.content.querySelectorAll("[data-lineage-notebook]")].map(
-                notebook => notebookTemplates.get(notebook.dataset.lineageNotebook).searchable
+                notebook => notebookTemplates.get(notebook.dataset.lineageNotebook)
             );
             return {
                 record, button, template,
-                searchable: `${template.content.textContent} ${dependencies.join(" ")}`.toLocaleLowerCase(),
+                related: record.dataset.lineageRelated === "true",
+                notebooks: dependencies,
+                searchable: `${name} ${template.content.textContent} ${dependencies.map(entry => entry.searchable).join(" ")}`.toLocaleLowerCase(),
+                relatedSearchable: `${name} ${relatedText(template)} ${dependencies.filter(entry => entry.related).map(entry => entry.relatedSearchable).join(" ")}`.toLocaleLowerCase(),
             };
         });
         const sourceRecords = records.map(record => ({
@@ -69,25 +82,55 @@
 
         const filter = () => {
             const query = search.value.trim().toLocaleLowerCase();
-            [...sourceRecords, ...notebooks, ...pipelines].forEach(({record, searchable}) => {
+            const relatedOnly = relatedScope.checked;
+            const inScope = entry => !relatedOnly || entry.related;
+            const matches = entry => inScope(entry)
+                && (relatedOnly ? entry.relatedSearchable : entry.searchable).includes(query);
+            sourceRecords.forEach(({record, searchable}) => {
                 record.hidden = !searchable.includes(query);
             });
+            [...notebooks, ...pipelines].forEach(entry => {
+                entry.record.hidden = !matches(entry);
+            });
+            pipelines.forEach(pipeline => {
+                const count = pipeline.notebooks.filter(inScope).length;
+                pipeline.button.querySelector(".lineage-artifact-count").textContent =
+                    `${count}${relatedOnly ? " related" : ""} notebook${count === 1 ? "" : "s"}`;
+            });
             if (selectedPipeline?.record.hidden) clearSelection();
+            if (selectedNotebook && !matches(notebookTemplates.get(selectedNotebook))) {
+                selectNotebook(null);
+            }
             panel.querySelectorAll("[data-lineage-notebook-record]").forEach(record => {
                 const id = record.querySelector("[data-lineage-notebook]").dataset.lineageNotebook;
-                record.hidden = !notebookTemplates.get(id).searchable.includes(query);
+                record.hidden = !matches(notebookTemplates.get(id));
             });
-            if (selectedNotebook && !notebookTemplates.get(selectedNotebook).searchable.includes(query)) {
-                selectNotebook(null);
+            panel.querySelectorAll("[data-lineage-related-record]").forEach(record => {
+                record.hidden = relatedOnly && record.dataset.lineageRelated !== "true";
+            });
+            panel.querySelectorAll(".lineage-detail-section").forEach(section => {
+                const entries = [...section.querySelectorAll("[data-lineage-related]")];
+                section.hidden = relatedOnly && entries.length > 0 && entries.every(entry => entry.hidden);
+            });
+            const emptyRelationships = panel.querySelector("[data-lineage-related-empty]");
+            if (emptyRelationships) {
+                emptyRelationships.hidden = !relatedOnly
+                    || [...panel.querySelectorAll(".lineage-pipeline-details > .lineage-detail-section")]
+                        .some(section => !section.hidden);
             }
             [pipelines, notebooks].forEach((entries, index) => {
                 const tabPanel = document.getElementById(tabs[index].getAttribute("aria-controls"));
-                tabPanel.querySelector("[data-lineage-no-results]").hidden =
+                const empty = tabPanel.querySelector("[data-lineage-no-results]");
+                const type = tabs[index].textContent.trim().toLocaleLowerCase();
+                empty.textContent = relatedOnly && !entries.some(inScope)
+                    ? `No ${type} connected to this semantic model.`
+                    : `No matching ${type}.`;
+                empty.hidden =
                     entries.length === 0 || entries.some(entry => !entry.record.hidden);
             });
-            const entries = activeTab === tabs[0] ? pipelines : notebooks;
+            const entries = (activeTab === tabs[0] ? pipelines : notebooks).filter(inScope);
             const visible = entries.filter(entry => !entry.record.hidden).length;
-            status.textContent = `${visible} of ${entries.length} ${activeTab.textContent.trim().toLocaleLowerCase()} shown`;
+            status.textContent = `${visible} of ${entries.length} ${relatedOnly ? "related " : ""}${activeTab.textContent.trim().toLocaleLowerCase()} shown`;
         };
 
         const selectPipeline = pipeline => {
@@ -125,7 +168,8 @@
                     const notebook = notebooks.find(item =>
                         item.button.dataset.lineageNotebook === button.dataset.lineageNotebookTarget
                     );
-                    if (!notebook.searchable.includes(search.value.trim().toLocaleLowerCase())) {
+                    const searchable = relatedScope.checked ? notebook.relatedSearchable : notebook.searchable;
+                    if (!searchable.includes(search.value.trim().toLocaleLowerCase())) {
                         search.value = "";
                     }
                     activateTab(tabs[1]);
@@ -135,6 +179,7 @@
                 } else {
                     selectNotebook(selectedNotebook === button.dataset.lineageNotebook ? null : button);
                 }
+                filter();
             }
             const childPipeline = event.target.closest("[data-lineage-child-pipeline]");
             if (childPipeline) {
@@ -160,6 +205,7 @@
             }
         }));
         search.addEventListener("input", filter);
+        scopeInputs.forEach(input => input.addEventListener("change", filter));
         filter();
     }
 

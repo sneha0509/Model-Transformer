@@ -92,6 +92,18 @@ def replacement_sources(artifact):
     return sources
 
 
+def _finding_sources(impact, sources):
+    """Retain exact target code for review even when no replacement is safe."""
+    return [{
+        "file": source["file"], "line": source["startLine"],
+        "objectType": source["objectType"], "objectName": source["objectName"],
+        "source": source["source"],
+    } for source in sources.values() if (
+        (source.get("objectType"), source.get("objectName")) ==
+        (impact["objectType"], impact["objectName"])
+    )]
+
+
 def _entity_fixes(impact, artifact):
     """Expand and merge source-checked edits within their exact target entity."""
     if artifact["type"] == "Notebook" and "targets" in artifact:
@@ -494,6 +506,7 @@ def validate_result(result, changes, artifacts):
                     break
         if not is_impact:
             continue
+        impact["sourceCode"] = _finding_sources(impact, sources[artifact_key])
         fixes = impact.get("proposedFixes")
         steps = impact.get("validationSteps")
         if not isinstance(fixes, list):

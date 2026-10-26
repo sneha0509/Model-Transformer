@@ -120,6 +120,14 @@ relationships (both endpoints, type compatibility, cardinality), measures and
 transitive DAX measure dependencies, calculated columns/tables, hierarchies,
 sort-by columns and role expressions. A physical column rename may need only a
 sourceColumn update while the logical model column and its DAX remain unchanged.
+Table name declarations are read-only container context, not independent targets
+for column changes. Attribute each consequence to the actual column, measure,
+relationship, calculated table or source expression that owns the affected code.
+Do not repeat child-column failures as parent-table impacts. An unchanged partition
+that merely names the physical table is not a second column-binding failure:
+assess its own M/SQL/Direct Lake properties, and use unaffectedTargets when there
+is no independent consequence. Keep genuine source-expression failures and
+downstream measure failures even when their repairs depend on another entity.
 Never equate same-named tables in different known schemas/workspaces/lakehouses.
 Unknown scopes, dynamic references, unavailable caller arguments and unsupported
 syntax must be explicit gaps; table-level lineage is not proven column-level flow.

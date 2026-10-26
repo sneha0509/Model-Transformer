@@ -1,7 +1,7 @@
 {% extends "shared/base.html" %}
 
-{% macro notebook_button(entry_id, name, reads=None, writes=None, target_id=None) %}
-    <li data-lineage-notebook-record>
+{% macro notebook_button(entry_id, name, reads=None, writes=None, target_id=None, notebook_key=None) %}
+    <li data-lineage-notebook-record data-lineage-related="{{ 'true' if notebook_key and ('notebook:' ~ notebook_key) in related_node_ids else 'false' }}">
         <button type="button" class="lineage-notebook-button"
                 data-lineage-notebook="{{ entry_id }}"
                 {% if target_id %}data-lineage-notebook-target="{{ target_id }}"{% endif %}
@@ -14,24 +14,36 @@
     </li>
 {% endmacro %}
 
-{% macro notebook_content(entry_id, name, reads, writes, pipeline_name=None, calls=[], unmatched=False) %}
-        <template id="{{ entry_id }}" data-lineage-notebook-template>
-            <h4>{{ name }}</h4>
-            <p class="fabric-status">{{ pipeline_name if pipeline_name else 'Notebook defaults' }}</p>
-            {% if unmatched %}
-                <p class="fabric-status">This notebook reference could not be matched. See the full JSON mapping for analysis details.</p>
-            {% endif %}
-            {% for title, dependencies in [('Read tables', reads), ('Write tables', writes)] %}
-                <h4>{{ title }}</h4>
-                <ul class="lineage-tables">
-                    {% for table in dependencies %}
-                        <li><code>{{ table.table }}</code></li>
-                    {% else %}<li>No statically identified table dependencies.</li>{% endfor %}
-                </ul>
-            {% endfor %}
-            {% for call in calls %}
-                <p>Calls notebook: {{ notebook_names[call.targetKey] if call.targetKey else call.reference }}</p>
-            {% endfor %}
+{% macro notebook_content(entry_id, name, reads, writes, calls=[], unmatched=False, notebook_key=None) %}
+        {% set calls = calls | list %}
+        <template id="{{ entry_id }}" data-lineage-notebook-template data-lineage-notebook-name="{{ name }}"
+                  data-lineage-related="{{ 'true' if notebook_key and ('notebook:' ~ notebook_key) in related_node_ids else 'false' }}">
+            <article class="lineage-notebook-details" aria-label="{{ name }}">
+                <p class="lineage-detail-type">Notebook</p>
+                {% if unmatched %}
+                    <p class="fabric-status">This notebook reference could not be matched. See the full JSON mapping for analysis details.</p>
+                {% endif %}
+                {% for title, dependencies in [('Read tables', reads), ('Write tables', writes)] %}
+                    <section class="lineage-detail-section" aria-label="{{ title }}">
+                        <h4>{{ title }}</h4>
+                        <ul class="lineage-detail-values">
+                            {% for table in dependencies %}
+                                <li><code>{{ table.table }}</code></li>
+                            {% else %}<li class="lineage-detail-empty">No statically identified table dependencies.</li>{% endfor %}
+                        </ul>
+                    </section>
+                {% endfor %}
+                {% if calls %}
+                    <section class="lineage-detail-section" aria-label="Called notebooks">
+                        <h4>Called notebooks</h4>
+                        <ul class="lineage-detail-values">
+                            {% for call in calls %}
+                                <li data-lineage-related-record data-lineage-related="{{ 'true' if call.targetKey and ('notebook:' ~ call.targetKey) in related_node_ids else 'false' }}">{{ notebook_names[call.targetKey] if call.targetKey else call.reference }}</li>
+                            {% endfor %}
+                        </ul>
+                    </section>
+                {% endif %}
+            </article>
         </template>
 {% endmacro %}
 
@@ -51,23 +63,25 @@
 {% block app_content %}
     <div class="fabric-dashboard fabric-preset-page">
         <section class="fabric-step" aria-labelledby="presetHeading">
-            <div class="step-heading">
-                <div>
+            <div class="preset-summary-heading">
+                <div class="preset-heading-title">
                     <p class="step-kicker">Semantic model preset</p>
                     <h2 id="presetHeading">{{ preset.semanticModel.name }}</h2>
-                    <a class="fabric-action-button impact-launch-button"
+                </div>
+                <div class="preset-actions" role="group" aria-label="Preset actions">
+                    <a class="fabric-action-button"
                        href="{{ url_for('fabric.impact_page', preset_id=preset.presetId) }}">
                         Impact Analysis
                     </a>
+                    <button
+                        id="refreshLineageButton"
+                        class="fabric-action-button preset-refresh-button"
+                        type="button"
+                        {% if not mapping %}hidden{% endif %}
+                    >Refresh repository &amp; lineage</button>
                 </div>
-                <button
-                    id="refreshLineageButton"
-                    class="fabric-action-button"
-                    type="button"
-                    {% if not mapping %}hidden{% endif %}
-                >Refresh repository &amp; lineage</button>
             </div>
-            <dl class="selection-details">
+            <dl class="selection-details preset-details">
                 <div>
                     <dt>Workspace</dt>
                     <dd>{{ preset.workspace.displayName }}</dd>
@@ -80,11 +94,11 @@
                     <dt>Branch</dt>
                     <dd>{{ preset.repository.branchName }}</dd>
                 </div>
-                <div>
+                <div class="preset-detail-path">
                     <dt>Semantic model path</dt>
                     <dd>{{ preset.semanticModel.path }}</dd>
                 </div>
-                <div>
+                <div class="preset-detail-path">
                     <dt>Local repository</dt>
                     <dd>{{ local_repository_path }}</dd>
                 </div>
@@ -136,29 +150,46 @@
             <div id="semanticModelPresetLayout" aria-label="Fabric pipeline, notebook and table mapping">
                 <section class="lineage-graph-section" aria-label="Semantic model lineage">
                     <div class="lineage-graph-toolbar" role="group" aria-label="Lineage graph controls">
-                        <label class="lineage-read-toggle" for="lineageGraphTables">
-                            <input id="lineageGraphTables" type="checkbox" aria-controls="lineageGraph"> Show source tables
-                        </label>
-                        <label for="lineageGraphTable">Model table</label>
-                        <select id="lineageGraphTable"><option value="">All model tables</option></select>
-                        <label class="lineage-read-toggle" for="lineageGraphReads">
-                            <input id="lineageGraphReads" type="checkbox"> Include reads
-                        </label>
-                        <button type="button" id="lineageZoomIn" aria-label="Zoom in">+</button>
-                        <button type="button" id="lineageZoomOut" aria-label="Zoom out">-</button>
-                        <button type="button" id="lineageFit">Fit graph</button>
-                        <button type="button" id="lineageFitFlow" disabled>Fit selected flow</button>
-                        <button type="button" id="lineageClearFlow" disabled>Clear path</button>
-                        <button type="button" id="lineageReset">Reset layout</button>
-                        <output id="lineageZoomLevel" aria-live="polite">100%</output>
-                        <label for="lineageGraphSearch">Find node</label>
-                        <input id="lineageGraphSearch" type="search" placeholder="Model, table, notebook or pipeline">
+                        <div class="lineage-graph-filters" role="group" aria-label="Find and filter nodes">
+                            <div class="lineage-filter-field">
+                                <label for="lineageGraphTable">Model table</label>
+                                <select id="lineageGraphTable" aria-controls="lineageGraph">
+                                    <option value="">All model tables</option>
+                                </select>
+                            </div>
+                            <div class="lineage-filter-field">
+                                <label for="lineageGraphSearch">Find node</label>
+                                <input id="lineageGraphSearch" type="search" aria-controls="lineageGraph"
+                                       placeholder="Model, table, notebook or pipeline">
+                            </div>
+                        </div>
+                        <div class="lineage-graph-actions">
+                            <div class="lineage-graph-control-group lineage-visibility-controls" role="group" aria-label="Graph visibility">
+                                <label class="lineage-read-toggle" for="lineageGraphTables">
+                                    <input id="lineageGraphTables" type="checkbox" aria-controls="lineageGraph"> Show source tables
+                                </label>
+                                <label class="lineage-read-toggle" for="lineageGraphReads">
+                                    <input id="lineageGraphReads" type="checkbox" aria-controls="lineageGraph"> Include reads
+                                </label>
+                            </div>
+                            <div class="lineage-graph-control-group lineage-view-controls" role="group" aria-label="Graph view">
+                                <button type="button" id="lineageZoomIn" aria-label="Zoom in">+</button>
+                                <button type="button" id="lineageZoomOut" aria-label="Zoom out">-</button>
+                                <output id="lineageZoomLevel" aria-live="polite">100%</output>
+                                <button type="button" id="lineageFit">Fit graph</button>
+                                <button type="button" id="lineageReset">Reset layout</button>
+                            </div>
+                            <div class="lineage-graph-control-group lineage-flow-controls" role="group" aria-label="Selected flow">
+                                <button type="button" id="lineageFitFlow" disabled>Fit selected flow</button>
+                                <button type="button" id="lineageClearFlow" disabled>Clear path</button>
+                            </div>
+                        </div>
                     </div>
                     <svg id="lineageGraph" class="lineage-graph" tabindex="0"
                          role="group" aria-label="Interactive semantic model lineage graph"></svg>
                     <script id="lineageGraphData" type="application/json">{{ mapping.graph | tojson }}</script>
                 </section>
-                <details class="lineage-record">
+                <details class="lineage-record lineage-source-tables">
                     <summary>Semantic model source tables ({{ mapping.modelTables | length }})</summary>
                     {% for table in mapping.modelTables %}
                         <div data-lineage-record>
@@ -169,20 +200,32 @@
                         </div>
                     {% endfor %}
                 </details>
-                <dl class="lineage-summary">
+                <dl class="lineage-summary" aria-label="Repository-wide totals"
+                    title="Repository-wide totals; the scope selector filters the artifact inventory below.">
                     {% for label, key in [('Pipelines', 'pipelines'), ('Notebooks', 'notebooks'), ('Notebook calls', 'pipelineNotebookCalls'), ('Read tables', 'readTables'), ('Written tables', 'writtenTables')] %}
                         <div><dt>{{ label }}</dt><dd>{{ mapping.summary[key] }}</dd></div>
                     {% endfor %}
                 </dl>
-                <div class="lineage-downloads">
-                    <a class="portal-nav-link" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='json') }}">Download full JSON mapping</a>
-                    <a class="portal-nav-link" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='csv') }}">Download evidence CSV</a>
+                <div class="lineage-browser-toolbar" role="search" aria-label="Filter lineage artifacts">
+                    <fieldset class="lineage-scope-toggle">
+                        <legend class="sr-only">Artifact scope</legend>
+                        <label for="lineageScopeAll">
+                            <input id="lineageScopeAll" class="sr-only" type="radio"
+                                   name="lineageInventoryScope" value="all" aria-controls="lineageArtifactBrowser" checked>
+                            Show all
+                        </label>
+                        <label for="lineageScopeRelated" title="Artifacts connected in this semantic model's lineage graph, including indirect connections.">
+                            <input id="lineageScopeRelated" class="sr-only" type="radio"
+                                   name="lineageInventoryScope" value="related" aria-controls="lineageArtifactBrowser">
+                            Show related
+                        </label>
+                    </fieldset>
+                    <label class="sr-only" for="lineageSearch">Filter by pipeline, notebook or table</label>
+                    <input id="lineageSearch" type="search"
+                           placeholder="Filter by pipeline, notebook or table"
+                           aria-controls="lineageArtifactBrowser" aria-describedby="lineageFilterStatus">
+                    <p id="lineageFilterStatus" class="lineage-filter-status" role="status" aria-live="polite" aria-atomic="true"></p>
                 </div>
-                <label class="search-field" for="lineageSearch">
-                    Filter by pipeline, notebook or table
-                    <input id="lineageSearch" type="search" placeholder="Search the mapping">
-                </label>
-                <p id="lineageFilterStatus" class="fabric-status" aria-live="polite"></p>
                 <div id="lineageArtifactBrowser" class="lineage-artifact-browser">
                     <aside class="lineage-artifact-sidebar" aria-label="Pipelines and notebooks">
                         <div class="lineage-artifact-tabs" role="tablist" aria-label="Artifact type">
@@ -197,7 +240,7 @@
                                     {% set notebook_count = mapping.pipelineLinks
                                         | selectattr('pipelineKey', 'equalto', pipeline.key)
                                         | selectattr('kind', 'equalto', 'TridentNotebook') | list | length %}
-                                    <li data-lineage-pipeline-record>
+                                    <li data-lineage-pipeline-record data-lineage-related="{{ 'true' if ('pipeline:' ~ pipeline.key) in related_node_ids else 'false' }}">
                                         <button type="button" id="lineagePipeline{{ loop.index0 }}" class="lineage-pipeline-button"
                                                 data-lineage-pipeline="lineagePipelineContent{{ loop.index0 }}"
                                                 aria-controls="lineageNotebookDetails" aria-pressed="false">
@@ -213,62 +256,78 @@
                             <ul class="lineage-artifact-list lineage-category-list">
                                 {% for notebook in mapping.notebooks %}
                                     {{ notebook_button('lineageNotebook' ~ loop.index0, notebook.name,
-                                        notebook.reads | length, notebook.writes | length) }}
+                                        notebook.reads | length, notebook.writes | length, notebook_key=notebook.key) }}
                                 {% else %}<li class="fabric-status">No Fabric notebook folders found.</li>{% endfor %}
                             </ul>
                             <p class="fabric-status" data-lineage-no-results hidden>No matching notebooks.</p>
                         </section>
                     </aside>
-                    <section class="lineage-notebook-panel" aria-labelledby="lineageNotebookHeading">
-                        <h3 id="lineageNotebookHeading">Pipeline and notebook details</h3>
+                    <section class="lineage-notebook-panel" aria-label="Selected artifact details">
                         <div id="lineageNotebookDetails" aria-live="polite">
-                            <p class="fabric-status">Select a pipeline to see its notebooks, or use the Notebooks tab to select a notebook and see its read and write tables.</p>
+                            <p class="fabric-status">Select a pipeline or notebook to view its relationships.</p>
                         </div>
                     </section>
                     {% for pipeline in mapping.pipelines %}
                         {% set pipeline_index = loop.index0 %}
+                        {% set links = mapping.pipelineLinks | selectattr('pipelineKey', 'equalto', pipeline.key) | list %}
+                        {% set notebook_links = links | selectattr('kind', 'equalto', 'TridentNotebook') | list %}
+                        {% set child_links = links | rejectattr('kind', 'equalto', 'TridentNotebook') | list %}
                         <template id="lineagePipelineContent{{ pipeline_index }}">
-                            <h4>{{ pipeline.name }}</h4>
-                            <h4>Notebooks</h4>
-                            <ul class="lineage-artifact-list">
-                                {% for link in mapping.pipelineLinks if link.pipelineKey == pipeline.key %}
-                                    {% if link.kind == 'TridentNotebook' %}
-                                        {{ notebook_button('lineagePipelineNotebook' ~ pipeline_index ~ '-' ~ loop.index0,
-                                            link.targetName or link.reference or 'Unknown notebook',
-                                            target_id=notebook_ids[link.targetKey] if link.targetKey else None) }}
-                                    {% else %}
-                                        <li class="lineage-child-pipeline">
-                                            Pipeline:
-                                            {% if link.targetKey %}
-                                                <button type="button" class="lineage-pipeline-link"
-                                                        data-lineage-child-pipeline="{{ pipeline_ids[link.targetKey] }}">{{ link.targetName }}</button>
-                                            {% else %}
-                                                {{ link.targetName or link.reference or 'Unknown pipeline' }}
+                            <article class="lineage-pipeline-details" aria-label="{{ pipeline.name }}">
+                                <section class="lineage-detail-section" aria-label="Notebooks">
+                                    <h4>Notebooks</h4>
+                                    <ul class="lineage-artifact-list lineage-detail-entities">
+                                        {% for link in links %}
+                                            {% if link.kind == 'TridentNotebook' %}
+                                                {{ notebook_button('lineagePipelineNotebook' ~ pipeline_index ~ '-' ~ loop.index0,
+                                                    link.targetName or link.reference or 'Unknown notebook',
+                                                    target_id=notebook_ids[link.targetKey] if link.targetKey else None,
+                                                    notebook_key=link.targetKey) }}
                                             {% endif %}
-                                        </li>
-                                    {% endif %}
-                                {% else %}<li class="fabric-status">No notebook or child-pipeline calls identified.</li>{% endfor %}
-                            </ul>
-                            <div data-lineage-pipeline-tables></div>
+                                        {% endfor %}
+                                        {% if not notebook_links %}<li class="lineage-detail-empty">No notebook calls identified.</li>{% endif %}
+                                    </ul>
+                                </section>
+                                {% if child_links %}
+                                    <section class="lineage-detail-section" aria-label="Child pipelines">
+                                        <h4>Child pipelines</h4>
+                                        <ul class="lineage-artifact-list lineage-detail-entities">
+                                            {% for link in child_links %}
+                                                <li class="lineage-child-pipeline" data-lineage-related-record
+                                                    data-lineage-related="{{ 'true' if link.targetKey and ('pipeline:' ~ link.targetKey) in related_node_ids else 'false' }}">
+                                                    {% if link.targetKey %}
+                                                        <button type="button" class="lineage-pipeline-link"
+                                                                data-lineage-child-pipeline="{{ pipeline_ids[link.targetKey] }}">{{ link.targetName }}</button>
+                                                    {% else %}
+                                                        <span class="lineage-detail-reference">{{ link.targetName or link.reference or 'Unknown pipeline' }}</span>
+                                                    {% endif %}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </section>
+                                {% endif %}
+                                <p class="lineage-detail-empty" data-lineage-related-empty hidden>No matching relationships in this view.</p>
+                                <div data-lineage-pipeline-tables></div>
+                            </article>
                         </template>
                         {% for link in mapping.pipelineLinks if link.pipelineKey == pipeline.key %}
                             {% if link.kind == 'TridentNotebook' %}
                                 {{ notebook_content('lineagePipelineNotebook' ~ pipeline_index ~ '-' ~ loop.index0,
                                     link.targetName or link.reference or 'Unknown notebook', link.reads, link.writes,
-                                    pipeline.name, unmatched=link.status != 'resolved') }}
+                                    unmatched=link.status != 'resolved', notebook_key=link.targetKey) }}
                             {% endif %}
                         {% endfor %}
                     {% endfor %}
                     {% for notebook in mapping.notebooks %}
                         {{ notebook_content('lineageNotebook' ~ loop.index0, notebook.name, notebook.reads, notebook.writes,
-                            calls=mapping.notebookLinks | selectattr('notebookKey', 'equalto', notebook.key)) }}
+                            calls=mapping.notebookLinks | selectattr('notebookKey', 'equalto', notebook.key),
+                            notebook_key=notebook.key) }}
                     {% endfor %}
                 </div>
-                <details class="lineage-record">
-                    <summary>Scope and limitations</summary>
-                    <ul>{% for limitation in mapping.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
-                    <p class="fabric-status">Generated: {{ mapping.generatedAt }}</p>
-                </details>
+                <div class="lineage-downloads" role="group" aria-label="Mapping downloads">
+                    <a class="fabric-action-button" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='json') }}" download>Download full JSON mapping</a>
+                    <a class="fabric-action-button" href="{{ url_for('fabric_api.download_fabric_mapping', preset_id=preset.presetId, report_format='csv') }}" download>Download evidence CSV</a>
+                </div>
             </div>
             {% endif %}
         </section>

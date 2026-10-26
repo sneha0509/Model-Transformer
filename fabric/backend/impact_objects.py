@@ -601,21 +601,27 @@ def target_catalog(scoped, catalog, changes):
         for item in objects:
             if item["objectType"] in {"partition", "calculated_table"} and item["table"] in affected_names:
                 impacted.setdefault(item["id"], set()).update(impacted[table_ids[item["table"].casefold()]])
-        targets = []
+        targets, context_nodes, model_edges = [], [], []
         for object_id, ids in impacted.items():
             item = by_id[object_id]
             item.update({
                 "changeIds": sorted(ids), "confidence": "static_candidate",
+                "sourceChangeIds": sorted(seeds.get(object_id, set())),
                 "reason": "Selected source mapping or static model dependency; whether an edit is needed depends on the requested change.",
                 "evidence": [{"file": item["segment"]["file"], "line": item["segment"]["startLine"]}],
             })
-            targets.append(item)
+            # Name-only table declarations are containers, not column-change findings.
+            if item["objectType"] == "table":
+                context_nodes.append({**_public(item), "contextOnly": True})
+            else:
+                targets.append(item)
             for parent in item["dependencies"] & impacted.keys():
-                edges.append({"source": parent, "target": object_id, "kind": "model_dependency", "confidence": "static"})
+                model_edges.append({"source": parent, "target": object_id, "kind": "model_dependency", "confidence": "static"})
         if targets:
             item = _slice_artifact(artifact, targets, objects)
             artifacts.append(item)
-            nodes.extend(item["targets"])
+            nodes.extend(context_nodes + item["targets"])
+            edges.extend(model_edges)
         else:
             inventory[key] = {"status": "out_of_scope"}
 

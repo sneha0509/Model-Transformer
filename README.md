@@ -112,13 +112,19 @@ python -m unittest shared.tests.test_portal legacy.tests.test_legacy fabric.test
 
 ## Fabric artifact mapping
 
+The lineage page uses a compact desktop preset summary: Workspace, Repository,
+and Branch share one row, with wider cards below for the complete model and local
+repository paths. **Impact Analysis** and **Refresh repository & lineage** sit
+together in the heading with matching button heights.
+
 Fabric presets start lineage at the **selected semantic model**, then follow its
 physical source tables to **producer notebooks** and the **pipelines** that run
 them. The default graph collapses the intermediate tables into
 **Semantic model → Notebooks → Pipelines**. Enable **Show source tables** above
 the graph to expand **Semantic model → Source tables → Notebooks → Pipelines**.
-This changes only the graph presentation; source-table cards and full JSON/CSV
-evidence remain unchanged. Shared notebook relationships are grouped by operation
+This changes only the graph presentation; the compact, expandable source-table
+section below the graph and full JSON/CSV evidence remain unchanged. Shared
+notebook relationships are grouped by operation
 and verification status, so unverified paths stay dashed when tables are hidden.
 The Model table selector and Include reads control work in both views. Tables
 without a known producer are visible when source tables are expanded; hiding
@@ -133,9 +139,13 @@ Readers of a source table are not presented as its upstream producers.
 
 The preset graph supports node dragging, canvas panning, scroll/pinch zoom,
 zoom buttons, fit-to-view, layout reset, node search, and a model-table selector
-for focusing on one branch. Nodes and relationships are keyboard accessible;
+for focusing on one branch. The desktop toolbar pairs the model-table selector
+with node search, groups the two boxed visibility toggles together, and keeps
+zoom, Fit graph, and Reset layout together. Selected-flow actions form their
+own group. Nodes and relationships are keyboard accessible;
 select either to highlight its connected flow. Source evidence and pipeline
 invocation parameters remain available in the JSON/CSV downloads.
+The full JSON mapping also retains analysis limitations and generation metadata.
 Confirmed source identities use solid relationships. Table-name matches whose
 schema, workspace or lakehouse identity cannot be proved (for example, a OneLake GUID
 versus a notebook's explicit lakehouse name) are **dashed, unverified candidates**,
@@ -155,6 +165,15 @@ the selected semantic model, to discover the selected model's producers and
 orchestrators. The graph is model-specific; the complete searchable artifact
 inventory remains below it. Legacy folders and Git internals are excluded.
 Windows long-path support keeps deeply nested artifacts in the scan.
+The inventory uses compact summary cards and a search field with an inline
+result-count badge. The filter prompt appears inside the search box. JSON and
+CSV download buttons sit at the end of the inventory.
+**Show all** (the default) lists the full repository inventory. **Show related**
+limits the pipeline/notebook lists and their artifact relationships to nodes in
+the selected semantic model's lineage graph, including indirect connections.
+This scope combines with search and applies to both tabs; counts and empty
+states reflect the chosen scope. It does not change the graph controls,
+repository-wide summary totals, or download contents.
 
 The mapping joins pipeline notebook IDs to exported `.platform` logical IDs,
 includes nested activity containers and child-pipeline references, and resolves
@@ -174,9 +193,15 @@ determines the selected item. A search hiding the target notebook is cleared.
 Pipeline cards preserve the original name casing and show their notebook call
 count beneath the name. Notebook cards show their read and write table counts.
 The Notebooks tab opens a notebook's tables directly in the right-hand panel.
+The details panel does not repeat the selected artifact's title. Pipeline
+relationships are categorized as **Notebooks** and **Child pipelines**;
+notebook details use a **Notebook** label and separate **Read tables**,
+**Write tables**, and, when present, **Called notebooks** sections. Dividers
+separate categories and individual entities.
 Tables are not displayed in the artifact lists or selected automatically.
-Notebook tab selections use notebook defaults and include notebooks without a
-caller. Pipeline invocation overrides remain available in the mapping downloads.
+Notebook tab selections use repository-defined relationships and include
+notebooks without a caller. Pipeline invocation overrides remain available in
+the mapping downloads.
 Unmatched notebook references remain in the pipeline details with an explicit
 message because there is no inventory notebook to select.
 Child-pipeline links open the referenced pipeline's details on the right. Search matches
@@ -359,6 +384,12 @@ and their prerequisites, never entire definitions (even for compact single-line
 JSON). Original source coordinates are retained. Copilot determines the impact
 of each targeted change and generates **actual replacement code** when a safe fix
 can be derived; it cannot expand the target set.
+Name-only table declarations are retained as read-only dependency context, not
+independent column-change targets. Columns, measures, relationships, calculated
+tables and source bindings still receive their own assessments. Copilot is
+instructed not to duplicate a child-column failure as a parent-table finding or
+as an unchanged partition's failure without an independent source-backed
+consequence. Prompt changes also invalidate prior AI cache entries.
 Each editable source entity has a content-addressed `sourceId`; context-only
 prerequisites are marked non-editable. Copilot returns that ID and the complete
 AI-generated `after` code, not a retyped original. The backend supplies the exact
@@ -418,11 +449,31 @@ The desktop page keeps column selection and the change description side by side.
 Reports start with an overview of affected artifacts, findings, high-priority
 items, and selected columns. Findings are grouped by **Semantic model**,
 **Notebook**, or **Pipeline**, ordered by priority, and filterable by artifact
-type. Each finding presents its entity/location, concrete impact and recommended
-action. When a fix is available it also shows **Before**, **After (AI proposed)**,
-and a highlighted **Unified diff**. Otherwise it shows **No automatic fix
-available** and the missing decision or information. Source references remain
-secondary, expandable evidence.
+type. Each finding has its own bordered, spaced entity card and starts with its
+**Affected entity**. Selected source-column chips provide dependency context, but
+are not repeated when the selected column is already the entity heading.
+Findings without proposed code show **Impact** and **Recommended action**
+side by side on desktop. A separate **Fix availability** box follows, showing
+either **Fix available** with **Before**, **After (AI proposed)** and a highlighted
+**Unified diff**, or **No automatic fix available** with the missing decision or
+information. **Current Code** remains visible when no safe fix is available,
+but only the named entity's code is shown; child columns are not repeated under
+their table, including in previews from older reports.
+BIM previews extract the named component's properties and readable, multiline
+expressions rather than displaying raw BIM JSON. Measure expressions, relationship
+endpoints, names and source bindings stay visible as code. Their highlighted diffs
+compare this extracted view, not file syntax; formatting-only changes are identified
+explicitly. Annotations, lineage identifiers and other descriptive metadata are
+collapsed under **Other component properties**. Metadata changed by a proposed
+fix remains visible in its before/after comparison and diff.
+Affected DAX column references and relationship endpoint values are highlighted
+in current code and before/after previews. Highlighting uses selected logical
+columns and direct source mappings, not all downstream affected entities; same-named
+columns on other tables, DAX comments and string literals are not highlighted.
+Exact source replacements and backend validation are unchanged.
+Older reports use available evidence for current-code previews; incomplete BIM
+excerpts and whole-model legacy definitions prompt for component-level analysis.
+Source references remain secondary, expandable evidence.
 Only artifacts with findings appear in the affected counts,
 cards and filters; static dependencies or analyzed status alone do not create
 an impact card. Confirmed impacts without fixes count as affected artifacts and
@@ -431,12 +482,14 @@ reason remain visible with a prompt to rerun analysis to assess fix availability
 Older reports without generated diffs still show their before/after code and
 prompt for a new analysis to generate the diff. Source references and
 dependency connections provide progressively more detail. Analysis gaps
-remain visible without exposing internal identifiers or request diagnostics.
+appear in a section collapsed by default, with the gap count inside the expanded
+section rather than above the affected artifacts. Internal identifiers and
+request diagnostics are not exposed.
 **Export PDF** opens the desktop print dialog; choose **Save as PDF** to save the
 formatted report. Exports include all artifact categories regardless of the active
 filter, including impact/recommendation items, unavailable-fix reasons and any
 before/after entity code and diffs, without validation checklists.
-Raw source-reference details are omitted.
+Raw source-reference details and unchanged component metadata are omitted.
 
 Copilot tools, shell access, configuration discovery, skills, and file hooks are
 disabled; permission requests are denied. Notebook code is never executed.

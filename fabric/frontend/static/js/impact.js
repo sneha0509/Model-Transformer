@@ -29,6 +29,9 @@
         pipeline_parameter: "Pipeline parameter", pipeline_variable: "Pipeline variable",
     };
     const severityOrder = {high: 0, medium: 1, low: 2};
+    const componentMetadata = new Set([
+        "annotations", "extendedProperties", "lineageTag", "sourceLineageTag", "description", "displayFolder",
+    ]);
 
     function element(tag, text, className) {
         const node = document.createElement(tag);
@@ -197,6 +200,173 @@
         return [file, coordinates].filter(Boolean).join(" \u00b7 ");
     }
 
+    function componentPreview(source, file, objectType) {
+        const code = source || "";
+        if (!/\.bim$/i.test(file || "") || !code.trim()) return {code, extracted: false};
+        // Older reports can contain DAX excerpts rather than complete JSON entities.
+        if (!/^[{"]/.test(code.trim())) return {code, extracted: false};
+        let definition;
+        try {
+            definition = JSON.parse(code);
+        } catch (error) {
+            if (!(error instanceof SyntaxError)) throw error;
+            return {code: "", extracted: false,
+                error: "This BIM excerpt is incomplete. Expand Source references to inspect the original code."};
+        }
+        if (typeof definition === "string" && objectType === "table") definition = {name: definition};
+        if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+            return {code: "", extracted: false,
+                error: "A model component could not be extracted. Rerun analysis for an entity-level preview."};
+        }
+        if (definition.model || definition.tables) {
+            return {code: "", extracted: false,
+                error: "This older report contains a full BIM definition. Rerun analysis for component-level code."};
+        }
+        return {code: componentProperties(definition), definition, extracted: true};
+    }
+
+    function componentProperties(value, indent = "") {
+        return Object.entries(value).flatMap(([name, value]) => {
+            const label = `${indent}${name}:`;
+            if (name === "expression" && (typeof value === "string" ||
+                Array.isArray(value) && value.every(line => typeof line === "string"))) {
+                const expression = Array.isArray(value) ? value.join("\n") : value;
+                return [label, ...expression.split("\n").map(line => `${indent}    ${line}`)];
+            }
+            if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
+                return [label, componentProperties(value, `${indent}    `)];
+            }
+            const lines = JSON.stringify(value, null, 4).split("\n");
+            return [`${label} ${lines[0]}`, ...lines.slice(1).map(line => `${indent}${line}`)];
+        }).join("\n");
+    }
+
+    function focusedPreview(preview, changedProperties = new Set()) {
+        if (!preview.definition) return preview;
+        const entries = Object.entries(preview.definition);
+        const primary = ([name]) => !componentMetadata.has(name) || changedProperties.has(name);
+        return {
+            ...preview,
+            code: componentProperties(Object.fromEntries(entries.filter(primary))),
+            metadataCode: componentProperties(Object.fromEntries(entries.filter(entry => !primary(entry)))),
+        };
+    }
+
+    function referenceRanges(text, {impact, columns}, definition) {
+        const ranges = [];
+        const addProperty = (name, value, identity) => {
+            if (typeof value !== "string" || !columns.has(identity.toLocaleLowerCase())) return;
+            const prefix = `${name}: `;
+            const literal = JSON.stringify(value);
+            let offset = 0;
+            for (const line of text.split("\n")) {
+                if (line === prefix + literal) {
+                    const start = offset + prefix.length;
+                    ranges.push({start, end: start + literal.length, identity});
+                    return;
+                }
+                offset += line.length + 1;
+            }
+        };
+        if (impact.objectType === "relationship") {
+            // Both BIM property views and exact TMDL endpoint declarations are supported.
+            for (const side of ["from", "to"]) {
+                if (definition?.[side + "Table"] && definition?.[side + "Column"]) {
+                    addProperty(side + "Column", definition[side + "Column"],
+                        `${definition[side + "Table"]}.${definition[side + "Column"]}`);
+                }
+            }
+            const endpoint = /^[ \t]*(?:from|to)Column:[ \t]*('(?:[^']|'')*'|[^\s.']+)\.('(?:[^']|'')*'|[^\s']+)[ \t]*\r?$/gm;
+            const unquote = name => name.startsWith("'") ? name.slice(1, -1).replaceAll("''", "'") : name;
+            for (const match of text.matchAll(endpoint)) {
+                const identity = `${unquote(match[1])}.${unquote(match[2])}`;
+                if (columns.has(identity.toLocaleLowerCase())) {
+                    const start = match.index + match[0].lastIndexOf(match[2]);
+                    ranges.push({start, end: start + match[2].length, identity});
+                }
+            }
+        } else {
+            if (["column", "calculated_column"].includes(impact.objectType)) {
+                for (const name of ["name", "sourceColumn"]) {
+                    addProperty(name, definition?.[name], impact.objectName);
+                }
+            }
+            if (["measure", "calculated_column", "calculated_table", "role"].includes(impact.objectType)) {
+                const owner = definition?.name && impact.objectName.endsWith(`.${definition.name}`) ?
+                    impact.objectName.slice(0, -definition.name.length - 1) :
+                    impact.objectName.split(".").slice(0, -1).join(".");
+                const masked = text.replace(/"(?:[^"]|"")*"|\/\/[^\n]*|--[^\n]*|\/\*[\s\S]*?\*\//g,
+                    match => match.replace(/[^\n]/g, " "));
+                const reference = /(?:(?<table>'(?:[^']|'')*'|[A-Za-z_]\w*)\s*)?(?<reference>\[(?<column>(?:[^\]]|\]\])*)\])/g;
+                for (const match of masked.matchAll(reference)) {
+                    const table = match.groups.table?.replace(/^'|'$/g, "").replaceAll("''", "'") || owner;
+                    const identity = `${table}.${match.groups.column.replaceAll("]]", "]")}`;
+                    if (!columns.has(identity.toLocaleLowerCase())) continue;
+                    const start = match.index + match[0].lastIndexOf(match.groups.reference);
+                    ranges.push({start, end: start + match.groups.reference.length, identity});
+                }
+            }
+        }
+        return ranges.sort((a, b) => a.start - b.start);
+    }
+
+    function highlightedCode(text, context, definition) {
+        const code = element("code");
+        let offset = 0;
+        for (const range of context ? referenceRanges(text, context, definition) : []) {
+            if (range.start < offset) continue;
+            code.append(document.createTextNode(text.slice(offset, range.start)));
+            const highlight = element("mark", text.slice(range.start, range.end), "impact-reference-highlight");
+            highlight.title = `Affected column: ${range.identity}`;
+            code.append(highlight);
+            offset = range.end;
+        }
+        code.append(document.createTextNode(text.slice(offset)));
+        return code;
+    }
+
+    function componentDiff(before, after) {
+        const original = before ? before.split("\n") : [];
+        const proposed = after ? after.split("\n") : [];
+        let start = 0;
+        while (start < original.length && start < proposed.length && original[start] === proposed[start]) start++;
+        let end = 0;
+        while (end < original.length - start && end < proposed.length - start &&
+            original[original.length - end - 1] === proposed[proposed.length - end - 1]) end++;
+        const contextStart = Math.max(0, start - 3);
+        const contextEnd = Math.min(end, 3);
+        const originalCount = original.length - end - contextStart + contextEnd;
+        const proposedCount = proposed.length - end - contextStart + contextEnd;
+        return [
+            "--- Current component", "+++ Proposed component",
+            `@@ -${contextStart + (originalCount ? 1 : 0)},${originalCount}` +
+                ` +${contextStart + (proposedCount ? 1 : 0)},${proposedCount} @@`,
+            ...original.slice(contextStart, start).map(line => ` ${line}`),
+            ...original.slice(start, original.length - end).map(line => `-${line}`),
+            ...proposed.slice(start, proposed.length - end).map(line => `+${line}`),
+            ...original.slice(original.length - end, original.length - end + contextEnd).map(line => ` ${line}`),
+        ].join("\n");
+    }
+
+    function codePanel(label, preview, context) {
+        const panel = element("div", undefined, "impact-component-panel");
+        if (label) panel.append(element("strong", label));
+        if (preview.error) panel.append(element("p", preview.error, "impact-muted"));
+        else {
+            const source = element("pre");
+            source.append(highlightedCode(preview.code, context, preview.definition));
+            panel.append(source);
+            if (preview.metadataCode) {
+                const metadata = element("details", undefined, "impact-component-metadata");
+                const properties = element("pre");
+                properties.append(element("code", preview.metadataCode));
+                metadata.append(element("summary", "Other component properties"), properties);
+                panel.append(metadata);
+            }
+        }
+        return panel;
+    }
+
     function showReport(report) {
         const changes = report.changes || [];
         const targets = report.targets || [];
@@ -270,12 +440,32 @@
             artifact.impacts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]).forEach(impact => {
                 const finding = element("section", undefined, "impact-finding");
                 const location = element("div", undefined, "impact-finding-location");
-                location.append(element("span", "Location", "impact-field-label"),
-                    element("strong", `${typeLabels[impact.objectType] || "Object"} \u00b7 ${impact.objectName}`));
-                const references = [...new Set(impact.evidence.map(sourceLocation))].filter(Boolean);
-                if (references.length) location.append(element("p", references.join(" / "), "impact-muted"));
+                location.append(element("span", "Affected entity", "impact-field-label"),
+                    element("strong", `${typeLabels[impact.objectType] || "Object"} \u00b7 ${impact.objectName}`,
+                        "impact-entity-name"));
+                const related = changes.filter(change => impact.changeIds.includes(change.id));
+                const contextColumns = related.filter(change =>
+                    !["column", "calculated_column"].includes(impact.objectType) ||
+                    `${change.table}.${change.column}` !== impact.objectName);
+                const codeContext = {impact, columns: new Set([
+                    ...related.map(change => `${change.table}.${change.column}`),
+                    ...targets.filter(target => target.artifactKey === impact.artifactKey &&
+                        ["column", "calculated_column"].includes(target.objectType) &&
+                        target.sourceChangeIds?.some(id => impact.changeIds.includes(id))).map(target => target.objectName),
+                ].map(identity => identity.toLocaleLowerCase()))};
+                if (contextColumns.length) {
+                    const columns = element("div", undefined, "impact-related-columns");
+                    columns.append(element("span", "Selected source columns", "impact-field-label"));
+                    const chips = element("div", undefined, "impact-change-chips");
+                    contextColumns.forEach(change => chips.append(element("span",
+                        `${change.table}.${change.column}`, "impact-change-chip")));
+                    columns.append(chips);
+                    location.append(columns);
+                }
                 finding.append(location);
-                const description = element("dl", undefined, "impact-finding-description");
+                const hasFix = Boolean(impact.proposedFixes?.length);
+                const description = element("dl", undefined, "impact-finding-description" +
+                    (hasFix ? "" : " impact-finding-description-paired"));
                 [["Impact", impact.impact], ["Recommended action", impact.recommendation]].forEach(([label, items]) => {
                     if (!items?.length) return;
                     const field = element("div");
@@ -291,12 +481,18 @@
                     description.append(field);
                 });
                 finding.append(description);
-                if (!impact.proposedFixes?.length) {
-                    const blocked = element("section", undefined, "impact-code-fix");
+                const fixBox = element("section", undefined,
+                    `impact-fix-box ${hasFix ? "is-available" : "is-unavailable"}`);
+                fixBox.append(element("span", "Fix availability", "impact-field-label"));
+                if (!hasFix) {
+                    const blocked = element("div", undefined, "impact-code-fix");
                     blocked.append(element("h5", "No automatic fix available"), element("p",
                         friendlyText(impact.fixUnavailableReason ||
                             "No automatic fix was saved for this finding. Rerun analysis to assess fix availability.")));
-                    finding.append(blocked);
+                    fixBox.append(blocked);
+                } else {
+                    fixBox.append(element("h5", "Fix available"),
+                        element("p", "AI-proposed code. Review only; no changes are applied.", "impact-muted"));
                 }
                 (impact.proposedFixes || []).forEach((fix, index) => {
                     const edit = element("section", undefined, "impact-code-fix");
@@ -307,24 +503,31 @@
                     if (fix.cells?.length) reference.append(document.createTextNode(` \u00b7 Cell ${fix.cells.join(", ")}`));
                     edit.append(reference);
                     const comparison = element("div", undefined, "impact-code-comparison");
-                    [["Before", fix.before], ["After (AI proposed)", fix.after]].forEach(([label, code]) => {
-                        const panel = element("div");
-                        const source = element("pre");
-                        source.append(element("code", code));
-                        panel.append(element("strong", label));
-                        if (label === "After (AI proposed)" && code === "") {
-                            panel.append(element("p", "Remove this code.", "impact-muted"));
-                        }
-                        panel.append(source);
-                        comparison.append(panel);
-                    });
+                    const original = componentPreview(fix.before, fix.file, impact.objectType);
+                    const proposed = componentPreview(fix.after, fix.file, impact.objectType);
+                    const changedProperties = new Set(original.definition && proposed.definition ?
+                        [...new Set([...Object.keys(original.definition), ...Object.keys(proposed.definition)])]
+                            .filter(name => JSON.stringify(original.definition[name]) !==
+                                JSON.stringify(proposed.definition[name])) : []);
+                    const before = focusedPreview(original, changedProperties);
+                    const after = focusedPreview(proposed, changedProperties);
+                    const extracted = before.extracted || after.extracted;
+                    if (extracted) edit.append(element("p",
+                        "BIM component view: extracted properties and expressions, not raw file syntax.", "impact-muted"));
+                    comparison.append(codePanel("Before", before, codeContext),
+                        codePanel("After (AI proposed)", after, codeContext));
+                    if (fix.after === "") comparison.children[1].append(element("p", "Remove this code.", "impact-muted"));
                     edit.append(comparison, element("h6", "Unified diff"),
-                        element("p", "Entity-relative snippet diff, not an apply-ready file patch.",
+                        element("p", extracted ? "Component-view diff, not an apply-ready file patch." :
+                            "Entity-relative snippet diff, not an apply-ready file patch.",
                             "impact-muted"));
-                    if (fix.diff) {
+                    const formattingOnly = extracted && original.code === proposed.code;
+                    const diffText = before.error || after.error || formattingOnly ? "" :
+                        extracted ? componentDiff(before.code, after.code) : fix.diff;
+                    if (diffText) {
                         const diff = element("pre", undefined, "impact-code-diff");
                         const code = element("code");
-                        const lines = fix.diff.split("\n");
+                        const lines = diffText.split("\n");
                         if (lines[lines.length - 1] === "") lines.pop();
                         lines.forEach((line, index) => {
                             const className = index < 2 ? "impact-diff-header" :
@@ -336,14 +539,36 @@
                         diff.append(code);
                         edit.append(diff);
                     } else {
-                        edit.append(element("p", "Run analysis again to generate a diff for this older report.", "impact-muted"));
+                        edit.append(element("p", formattingOnly ?
+                            "Only source formatting changed; the extracted component properties are unchanged." :
+                            "Run analysis again to generate a component diff for this older report.", "impact-muted"));
                     }
-                    finding.append(edit);
+                    if (fix.rationale) edit.append(element("p", friendlyText(fix.rationale), "impact-muted"));
+                    fixBox.append(edit);
                 });
-                const related = changes.filter(change => impact.changeIds.includes(change.id));
-                if (related.length) finding.append(element("p",
-                    `Related columns: ${related.map(change => `${change.table}.${change.column}`).join(", ")}`,
-                    "impact-related-columns"));
+                finding.append(fixBox);
+                if (!hasFix) {
+                    const ownSources = (impact.sourceCode || []).filter(source =>
+                        source.objectType === impact.objectType && source.objectName === impact.objectName);
+                    const sources = ownSources.length ? ownSources :
+                        impact.evidence.filter(citation => citation.excerpt).map(citation => ({
+                            ...citation, source: citation.excerpt,
+                            objectType: impact.objectType, objectName: impact.objectName,
+                        }));
+                    if (sources.length) {
+                        const current = element("section", undefined, "impact-current-code");
+                        current.append(element("h5", "Current Code"));
+                        const previews = sources.map(source =>
+                            focusedPreview(componentPreview(source.source, source.file, source.objectType)));
+                        const components = element("div", undefined, "impact-current-components" +
+                            (previews.length > 1 ? " impact-current-components-paired" : ""));
+                        previews.forEach(preview => {
+                            components.append(codePanel(null, preview, codeContext));
+                        });
+                        current.append(components);
+                        finding.append(current);
+                    }
+                }
                 if (impact.evidence.length) {
                     const source = element("details", undefined, "impact-finding-details impact-source-reference");
                     source.append(element("summary", "Source references"));
@@ -387,10 +612,12 @@
             note.append(element("span", friendlyText(gap.message)));
             return note;
         }));
-        document.getElementById("impactReviewNotes").hidden = !gaps.length;
+        const reviewNotes = document.getElementById("impactReviewNotes");
+        reviewNotes.hidden = !gaps.length;
+        reviewNotes.open = false;
         const notice = document.getElementById("impactReviewNotice");
         notice.hidden = !gaps.length;
-        notice.textContent = `${gaps.length} analysis ${gaps.length === 1 ? "gap" : "gaps"}. See Analysis gaps below.`;
+        notice.textContent = `${gaps.length} analysis ${gaps.length === 1 ? "gap" : "gaps"}.`;
         const unaffected = (report.unaffectedTargets || []).filter(target => !report.impacts.some(impact =>
             impact.artifactKey === target.artifactKey && impact.objectType === target.objectType &&
             impact.objectName === target.objectName));
@@ -555,7 +782,8 @@
         if (printDetails.length) return;
         printDetails = [...results.querySelectorAll("details")].map(detail => ({detail, open: detail.open}));
         printDetails.forEach(({detail}) => {
-            if (!detail.classList.contains("impact-source-reference")) detail.open = true;
+            if (!detail.classList.contains("impact-source-reference") &&
+                !detail.classList.contains("impact-component-metadata")) detail.open = true;
         });
     });
     window.addEventListener("afterprint", () => {
