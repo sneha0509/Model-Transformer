@@ -359,7 +359,8 @@
         });
         const path = element("path", {"marker-end": "url(#lineageArrow)"});
         const caption = element("text", {class: "lineage-edge-caption", "text-anchor": "middle"},
-            `${edge.label}${edge.status === "unverified" ? " (unverified)" : ""}`);
+            edge.collapsed && edge.operation === "written by" ? ""
+                : `${edge.label}${edge.status === "unverified" ? " (unverified)" : ""}`);
         group.append(element("title", {}, group.getAttribute("aria-label")), path, caption);
         edgeLayer.append(group);
         Object.assign(edge, {element: group, path, caption});

@@ -126,6 +126,8 @@ This changes only the graph presentation; the compact, expandable source-table
 section below the graph and full JSON/CSV evidence remain unchanged. Shared
 notebook relationships are grouped by operation
 and verification status, so unverified paths stay dashed when tables are hidden.
+Collapsed model-to-producer connections omit the relationship text label while
+retaining their arrows, verification styling, and accessible descriptions.
 The Model table selector and Include reads control work in both views. Tables
 without a known producer are visible when source tables are expanded; hiding
 them does not invent a notebook connection.
@@ -168,7 +170,7 @@ Windows long-path support keeps deeply nested artifacts in the scan.
 The inventory uses compact summary cards and a search field with an inline
 result-count badge. The filter prompt appears inside the search box. JSON and
 CSV download buttons sit at the end of the inventory.
-**Show all** (the default) lists the full repository inventory. **Show related**
+**Show all** lists the full repository inventory. **Show related** (the default)
 limits the pipeline/notebook lists and their artifact relationships to nodes in
 the selected semantic model's lineage graph, including indirect connections.
 This scope combines with search and applies to both tabs; counts and empty
