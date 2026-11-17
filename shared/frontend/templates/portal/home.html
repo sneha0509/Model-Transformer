@@ -1,0 +1,40 @@
+{% extends "shared/base.html" %}
+
+{% block title %}Model Transformer Portal{% endblock %}
+{% block app_title %}Home Page{% endblock %}
+{% block app_aria_label %}Model Transformer home{% endblock %}
+
+{% block app_content %}
+    <div class="sign-in-prompt" id="signInPrompt" {% if portal_user %}hidden{% endif %}>
+        <div class="sign-in-prompt-content">
+            <div class="sign-in-prompt-icon">&#128272;</div>
+            <h2>Sign In Required</h2>
+            <p>Sign in with your Microsoft account to access and manage your batch presets.</p>
+            <button class="primary-button sign-in-prompt-button" id="signInPromptButton" type="button">
+                <span id="signInPromptButtonText">Sign in with Microsoft</span>
+            </button>
+            <p class="form-error" id="signInPromptError" role="alert"></p>
+        </div>
+    </div>
+
+    <section class="dashboard-picker" id="dashboardPicker" aria-labelledby="dashboardPickerTitle" {% if not portal_user %}hidden{% endif %}>
+        <p class="eyebrow">Model Transformer</p>
+        <h2 id="dashboardPickerTitle">Choose your dashboard</h2>
+        <div class="dashboard-options">
+            <a class="dashboard-option" id="legacyOption" href="{{ url_for('legacy.home') }}">
+                <h3>Legacy</h3>
+                <p>Existing Power BI models, saved presets, and AI-powered refresh workflows.</p>
+                <span>Open Legacy &#8594;</span>
+            </a>
+            <a class="dashboard-option" id="fabricOption" href="{{ url_for('fabric.home') }}">
+                <h3>Fabric</h3>
+                <p>A new space for Microsoft Fabric. Dashboard content will be added later.</p>
+                <span>Open Fabric &#8594;</span>
+            </a>
+        </div>
+    </section>
+{% endblock %}
+
+{% block scripts %}
+    <script src="{{ url_for('portal.static', filename='js/home.js') }}"></script>
+{% endblock %}

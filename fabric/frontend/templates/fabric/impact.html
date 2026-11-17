@@ -1,0 +1,138 @@
+{% extends "shared/base.html" %}
+
+{% block title %}{{ preset.presetName }} - Impact Analysis{% endblock %}
+{% block app_title %}Impact Analysis{% endblock %}
+{% block app_shell_class %}impact-app-shell{% endblock %}
+{% block app_aria_label %}Fabric schema change impact analysis{% endblock %}
+{% block head_extra %}
+    <link rel="stylesheet" href="{{ url_for('fabric.static', filename='css/styles.css') }}">
+{% endblock %}
+{% block dashboard_navigation %}
+    <a class="portal-nav-link" href="{{ url_for('fabric.preset_page', preset_id=preset.presetId) }}">Preset lineage</a>
+    <a class="portal-nav-link" href="{{ url_for('fabric.home') }}">Fabric Home</a>
+    <a class="portal-nav-link" href="{{ url_for('portal.home') }}">Dashboards</a>
+{% endblock %}
+{% block app_content %}
+<div class="fabric-dashboard" id="fabricImpact"
+     data-catalog-url="{{ url_for('fabric_api.fabric_impact_catalog', preset_id=preset.presetId) }}"
+     data-analyze-url="{{ url_for('fabric_api.analyze_fabric_impact', preset_id=preset.presetId) }}"
+     data-copilot-login-url="{{ url_for('fabric_api.copilot_login') }}"
+     data-workspace-name="{{ preset.workspace.displayName }}"
+     data-repository-name="{{ preset.repository.name }}"
+     data-branch-name="{{ preset.repository.branchName }}">
+    <section class="impact-page-heading" aria-labelledby="impactHeading">
+        <div>
+            <p class="step-kicker">Schema change review</p>
+            <h2 id="impactHeading">{{ preset.semanticModel.name }}</h2>
+            <p class="impact-page-description">Review affected entities, DAX breakages, proposed code changes, and decisions needed for safe fixes.</p>
+            <dl class="impact-context">
+                <div><dt>Workspace</dt><dd>{{ preset.workspace.displayName }}</dd></div>
+                <div><dt>Repository</dt><dd>{{ preset.repository.name }}</dd></div>
+                <div><dt>Branch</dt><dd>{{ preset.repository.branchName }}</dd></div>
+            </dl>
+        </div>
+        <span class="impact-badge">Review only &middot; no changes applied</span>
+    </section>
+    <section class="impact-schema-status" aria-label="Model schema">
+        <p id="impactStatus" class="fabric-status" role="status" aria-live="polite">Loading tables and columns.</p>
+        <button class="fabric-action-button impact-secondary-button" type="button" id="reloadImpactSchema">Refresh schema</button>
+        <form id="impactLiveModelForm" class="impact-live-model-picker" hidden>
+            <p>Choose the semantic model in <strong>{{ preset.workspace.displayName }}</strong> to review.</p>
+            <label for="impactLiveModel">Live Fabric semantic model</label>
+            <select id="impactLiveModel" required></select>
+            <button id="loadImpactLiveModel" class="fabric-action-button" type="submit">
+                Load tables &amp; columns
+            </button>
+        </form>
+        <details id="impactCatalogGaps" hidden>
+            <summary>Schema review notes</summary>
+            <ul id="impactCatalogGapList"></ul>
+        </details>
+    </section>
+    <form id="impactForm" class="fabric-step" aria-labelledby="impactSelectionHeading">
+        <div class="impact-selection-layout">
+            <div class="impact-selection-pane">
+                <div class="impact-pane-heading">
+                    <span class="impact-step-number" aria-hidden="true">1</span>
+                    <h2 id="impactSelectionHeading">Select columns</h2>
+                </div>
+                <label class="sr-only" for="impactSearch">Find a table or column</label>
+                <input id="impactSearch" type="search" placeholder="Search tables or columns">
+                <div class="impact-selection-toolbar">
+                    <p id="impactSelectionCount" class="fabric-status" aria-live="polite">0 columns selected</p>
+                    <span class="impact-muted">Up to 200</span>
+                </div>
+                <div id="impactTables" class="impact-tables"></div>
+                <p id="impactTableEmpty" class="impact-empty-state" hidden>No tables or columns match your search.</p>
+            </div>
+            <div class="impact-instruction-pane">
+                <div class="impact-pane-heading">
+                    <span class="impact-step-number" aria-hidden="true">2</span>
+                    <h2>Describe the change</h2>
+                </div>
+                <label class="sr-only" for="impactInstructions">What will change?</label>
+                <p id="impactInstructionHelp" class="fabric-status">
+                    Include the new name, data type, or behavior you have in mind.
+                </p>
+                <textarea id="impactInstructions" rows="8" maxlength="20000" required
+                          aria-describedby="impactInstructionHelp"
+                          placeholder="Example: Rename Orders.Amount to Revenue in the source, keeping the model display name. Change CustomerID to text to preserve leading zeros."></textarea>
+                <div class="impact-submit-row">
+                    <p class="fabric-status">Review current code and proposed diffs before making changes. No changes are applied.</p>
+                    <button class="fabric-action-button" id="analyzeImpactButton" type="submit" disabled>Analyze impact</button>
+                </div>
+            </div>
+        </div>
+    </form>
+    <section id="impactResults" class="fabric-step" aria-labelledby="impactResultsHeading" hidden>
+        <header class="impact-report-heading">
+            <div>
+                <p class="step-kicker">Analysis report</p>
+                <h2 id="impactResultsHeading" tabindex="-1">Change impact overview</h2>
+                <p id="impactReportSummary" class="fabric-status"></p>
+            </div>
+            <button id="impactReportDownload" class="fabric-action-button impact-secondary-button" type="button">Export PDF</button>
+        </header>
+        <div id="impactReportMetrics" class="impact-report-metrics" aria-label="Impact summary"></div>
+        <details class="impact-request-details">
+            <summary>Change request <span id="impactChangeCount" class="impact-muted"></span></summary>
+            <div id="impactSummaries"></div>
+            <div id="impactChangedColumns" class="impact-change-chips"></div>
+        </details>
+        <div class="impact-section-heading">
+            <div>
+                <h3>Affected artifacts</h3>
+                <p class="fabric-status">Review each affected entity, its component code, and the proposed fix or decision needed for a safe change.</p>
+            </div>
+        </div>
+        <div id="impactArtifactFilters" class="impact-artifact-filters" role="group" aria-label="Filter affected artifacts"></div>
+        <div id="impactFindings"></div>
+        <details id="impactReviewNotes" class="impact-review-notes" aria-labelledby="impactReviewHeading" hidden>
+            <summary id="impactReviewHeading">Analysis gaps</summary>
+            <p id="impactReviewNotice" class="impact-review-notice" hidden></p>
+            <ul id="impactReportGaps"></ul>
+        </details>
+        <details class="impact-dependency-details">
+            <summary>Dependency connections</summary>
+            <div id="impactLineage" class="impact-lineage"></div>
+        </details>
+    </section>
+    <dialog id="impactCopilotLogin" class="impact-login-dialog"
+            aria-labelledby="impactCopilotLoginHeading" aria-describedby="impactCopilotLoginHelp">
+        <h2 id="impactCopilotLoginHeading">Sign in to GitHub Copilot</h2>
+        <p id="impactCopilotLoginHelp">Continue in your browser to authorize GitHub Copilot.
+            Your selection and change description will be kept, and analysis will resume after sign-in.</p>
+        <p id="impactCopilotLoginStatus" class="fabric-status" role="status" aria-live="polite"></p>
+        <div class="impact-login-actions">
+            <button id="cancelImpactCopilotLogin" class="fabric-action-button" type="button">Cancel</button>
+            <button id="startImpactCopilotLogin" class="fabric-action-button" type="button" autofocus>
+                Sign in with GitHub
+            </button>
+        </div>
+    </dialog>
+</div>
+{% endblock %}
+{% block scripts %}
+    {{ super() }}
+    <script src="{{ url_for('fabric.static', filename='js/impact.js') }}"></script>
+{% endblock %}
