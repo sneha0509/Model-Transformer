@@ -8,7 +8,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shared.backend.auth import build_user, get_fabric_access_token, get_power_bi_access_token
+from shared.backend.auth import (
+    build_user,
+    get_browser_credential_id,
+    get_fabric_access_token,
+    get_power_bi_access_token,
+    use_browser_credential,
+)
 from shared.paths import PROJECT_ROOT
 
 
@@ -346,6 +352,7 @@ class BatchRefreshManager:
 
     def start(self, preset_path):
         refresh_plan = load_refresh_plan(preset_path)
+        credential_id = get_browser_credential_id()
         job_id = uuid.uuid4().hex
         job = {
             "id": job_id,
@@ -359,12 +366,16 @@ class BatchRefreshManager:
             self._jobs[job_id] = job
 
         threading.Thread(
-            target=self._run,
-            args=(job_id, refresh_plan),
+            target=self._run_with_credential,
+            args=(job_id, refresh_plan, credential_id),
             name=f"batch-refresh-{job_id[:8]}",
             daemon=True,
         ).start()
         return self.get(job_id)
+
+    def _run_with_credential(self, job_id, refresh_plan, credential_id):
+        with use_browser_credential(credential_id):
+            self._run(job_id, refresh_plan)
 
     def get(self, job_id):
         with self._lock:

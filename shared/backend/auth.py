@@ -1,26 +1,88 @@
 """Authentication helpers for browser-backed Power BI and Fabric API calls."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+import secrets
+from threading import RLock
+
 import jwt
 from azure.identity import InteractiveBrowserCredential
+from flask import has_request_context, session
 
 
 POWER_BI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
-_browser_credential = None
+_browser_credentials = {}
+_browser_credentials_lock = RLock()
+_active_credential_id = ContextVar("active_browser_credential_id", default=None)
+_standalone_credential = ContextVar("standalone_browser_credential", default=None)
 
 
 def get_browser_credential():
-    """Return one credential so acquired tokens are reused for later API calls."""
-    global _browser_credential
-    if _browser_credential is None:
-        _browser_credential = InteractiveBrowserCredential()
-    return _browser_credential
+    """Return the credential bound to the current session or execution context."""
+    credential_id = _active_credential_id.get()
+    if credential_id is None and has_request_context():
+        credential_id = session.get("credential_id")
+
+    if credential_id is not None:
+        with _browser_credentials_lock:
+            credential = _browser_credentials.get(credential_id)
+        if credential is None:
+            raise RuntimeError("Browser authentication is unavailable. Sign in again.")
+        return credential
+
+    if has_request_context():
+        raise RuntimeError("Browser authentication is unavailable. Sign in again.")
+
+    credential = _standalone_credential.get()
+    if credential is None:
+        credential = InteractiveBrowserCredential()
+        _standalone_credential.set(credential)
+    return credential
 
 
-def clear_browser_credential():
-    """Forget cached tokens when the user signs out of the application."""
-    global _browser_credential
-    _browser_credential = None
+def store_browser_credential(credential):
+    credential_id = secrets.token_urlsafe(32)
+    with _browser_credentials_lock:
+        _browser_credentials[credential_id] = credential
+    return credential_id
+
+
+def get_browser_credential_id():
+    credential_id = _active_credential_id.get()
+    if credential_id is None and has_request_context():
+        credential_id = session.get("credential_id")
+    if credential_id is None:
+        raise RuntimeError("Browser authentication is unavailable. Sign in again.")
+    return credential_id
+
+
+def has_browser_credential():
+    try:
+        get_browser_credential()
+    except RuntimeError:
+        return False
+    return True
+
+
+def clear_browser_credential(credential_id=None):
+    """Forget only the credential bound to the current session."""
+    if credential_id is None:
+        credential_id = _active_credential_id.get()
+        if credential_id is None and has_request_context():
+            credential_id = session.get("credential_id")
+    if credential_id is not None:
+        with _browser_credentials_lock:
+            _browser_credentials.pop(credential_id, None)
+
+
+@contextmanager
+def use_browser_credential(credential_id):
+    token = _active_credential_id.set(credential_id)
+    try:
+        yield
+    finally:
+        _active_credential_id.reset(token)
 
 
 def get_power_bi_access_token():
